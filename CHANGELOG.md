@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Tencent Lighthouse + Feishu/Lark bridge setup.** Added a `/opt/whalebro`
+  Lighthouse runbook, systemd deploy assets, a long-connection Feishu/Lark
+  bridge, a bridge config validator, and a VPS doctor for runtime, Node,
+  binaries, env, systemd, and localhost health checks.
+- **Tencent Cloud remote-first onboarding.** Documented the CNB + Lighthouse +
+  Feishu/Lark + optional EdgeOne teaching path and added non-active CNB deploy
+  templates for a future Lighthouse deploy button. Feishu/Lighthouse branches
+  are now mirrored to CNB for Tencent-first bootstrap.
+
+### Fixed
+
+- **Feishu/Lark bridge dependency installs are locked and audited.** The
+  bridge now ships a package lock, installs with `npm ci` on Lighthouse when
+  available, and overrides the Lark SDK's transitive `axios` dependency to a
+  patched line.
+- **China-friendly update fallback.** `deepseek update` now supports mirrored
+  release assets through `DEEPSEEK_TUI_RELEASE_BASE_URL` plus
+  `DEEPSEEK_TUI_VERSION`, and its network-failure hints point users behind
+  GitHub-blocking networks to the CNB `cargo install --git` path for both
+  shipped binaries.
+- **CNB is the default Tencent release-candidate mirror.** The CNB sync
+  workflow now mirrors Feishu/Lighthouse release branches, so Tencent
+  Lighthouse bootstrap can use CNB before the release branch merges.
+
 ## [0.8.36] - 2026-05-14
 
 ### Added
@@ -29,17 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependency-unsafe parallel fanout unless callers pass
   `dependency_mode="independent"`, and RLM now exposes `sub_query_sequence`
   for A-to-B dependent work.
-
-### Added
-
-- **Tencent Lighthouse + Feishu/Lark bridge setup.** Added a `/opt/whalebro`
-  Lighthouse runbook, systemd deploy assets, a long-connection Feishu/Lark
-  bridge, a bridge config validator, and a VPS doctor for runtime, Node,
-  binaries, env, systemd, and localhost health checks.
-- **Tencent Cloud remote-first onboarding.** Documented the CNB + Lighthouse +
-  Feishu/Lark + optional EdgeOne teaching path and added non-active CNB deploy
-  templates for a future Lighthouse deploy button. The v0.8.36 Lighthouse
-  branch is now mirrored to CNB for Tencent-first bootstrap.
 
 ## [0.8.35] - 2026-05-13
 
@@ -4139,7 +4156,7 @@ Welcome — and thank you.
 - Hooks system and config profiles
 - Example skills and launch assets
 
-[Unreleased]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.35...HEAD
+[Unreleased]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.36...HEAD
 [0.8.36]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.35...v0.8.36
 [0.8.35]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.34...v0.8.35
 [0.8.34]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.33...v0.8.34

@@ -15,12 +15,12 @@ Repo/workspace:
 - Read /Volumes/VIXinSSD/whalebro/AGENTS.md and /Volumes/VIXinSSD/whalebro/deepseek-tui/AGENTS.md before editing.
 - The repo now has a first-pass deployment/runbook under:
   - docs/TENCENT_LIGHTHOUSE_HK.md
-  - docs/FEISHU_LIGHTHOUSE_V0_8_36_PLAN.md
+  - docs/FEISHU_LIGHTHOUSE_V0_8_37_PLAN.md
   - integrations/feishu-bridge/
   - deploy/tencent-lighthouse/
   - scripts/tencent-lighthouse/
-- Current working branch with this setup: work/v0.8.36-feishu-lighthouse. Verify it is pushed before relying on a VPS git clone.
-- Current CNB mirror for this branch: https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git refs/heads/work/v0.8.36-feishu-lighthouse.
+- Current working branch with this setup: work/v0.8.37-feishu-lighthouse. Verify it is pushed before relying on a VPS git clone.
+- Current CNB mirror for this branch: https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git refs/heads/work/v0.8.37-feishu-lighthouse.
 - Remote-first overview: docs/TENCENT_CLOUD_REMOTE_FIRST.md.
 - CNB deploy templates are non-active examples under deploy/tencent-lighthouse/cnb/.
 
@@ -69,9 +69,9 @@ VPS setup steps:
 1. SSH into the instance.
 2. Clone the repo from CNB when available and run docs/TENCENT_LIGHTHOUSE_HK.md exactly, adapting only branch/repo URL if needed.
 3. Run:
-   sudo DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git DEEPSEEK_REPO_BRANCH=work/v0.8.36-feishu-lighthouse bash scripts/tencent-lighthouse/bootstrap-ubuntu.sh
+   sudo DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git DEEPSEEK_REPO_BRANCH=work/v0.8.37-feishu-lighthouse bash scripts/tencent-lighthouse/bootstrap-ubuntu.sh
    If I confirm I want whalescale on the VPS immediately, use:
-   sudo DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git DEEPSEEK_REPO_BRANCH=work/v0.8.36-feishu-lighthouse WHALEBRO_EXTRA_REPOS='whalescale=https://github.com/Hmbown/whalescale.git' bash scripts/tencent-lighthouse/bootstrap-ubuntu.sh
+   sudo DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git DEEPSEEK_REPO_BRANCH=work/v0.8.37-feishu-lighthouse WHALEBRO_EXTRA_REPOS='whalescale=https://github.com/Hmbown/whalescale.git' bash scripts/tencent-lighthouse/bootstrap-ubuntu.sh
    Use SSH remotes instead if the repo is private or I need push access from the VPS.
 4. Install Rust 1.88+ for the deepseek user via rustup minimal profile.
 5. Build/install both binaries:

@@ -1,4 +1,4 @@
-# Feishu Lighthouse v0.8.36 Plan
+# Feishu Lighthouse v0.8.37 Plan
 
 Goal: make Feishu/Lark on Tencent Lighthouse a supported remote-control path
 for `deepseek serve --http`.
@@ -28,7 +28,7 @@ for `deepseek serve --http`.
 - Runbook: `docs/TENCENT_LIGHTHOUSE_HK.md`
 - Computer Use handoff: `docs/TENCENT_LIGHTHOUSE_HANDOFF_PROMPT.md`
 
-## v0.8.36 Work
+## v0.8.37 Work
 
 1. Create a release branch for this lane, then update the runbook branch value
    once it is pushed.
