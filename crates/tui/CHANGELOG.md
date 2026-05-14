@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binaries, env, systemd, and localhost health checks.
 - **Tencent Cloud remote-first onboarding.** Documented the CNB + Lighthouse +
   Feishu/Lark + optional EdgeOne teaching path and added non-active CNB deploy
-  templates for a future Lighthouse deploy button.
+  templates for a future Lighthouse deploy button. The v0.8.36 Lighthouse
+  branch is now mirrored to CNB for Tencent-first bootstrap.
 
 ## [0.8.35] - 2026-05-13
 

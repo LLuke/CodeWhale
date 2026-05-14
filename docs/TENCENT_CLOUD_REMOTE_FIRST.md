@@ -50,8 +50,8 @@ EdgeOne is optional:
    ```
 
    For active feature branches that have not been mirrored to CNB yet, use the
-   GitHub URL or manually mirror the branch first. Release tags and `main` are
-   the stable CNB path.
+   GitHub URL or manually mirror the branch first. Release tags, `main`, and
+   explicitly mirrored feature branches are the stable CNB path.
 
 3. Bootstrap `/opt/whalebro` on the server:
 

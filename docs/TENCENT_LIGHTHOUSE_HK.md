@@ -90,7 +90,7 @@ SSH into the Lighthouse instance and run:
 sudo apt-get update
 sudo apt-get install -y git
 export DEEPSEEK_BRANCH=work/v0.8.36-feishu-lighthouse
-export DEEPSEEK_REPO_URL=https://github.com/Hmbown/DeepSeek-TUI.git
+export DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git
 git clone --branch "$DEEPSEEK_BRANCH" "$DEEPSEEK_REPO_URL" /tmp/deepseek-tui
 cd /tmp/deepseek-tui
 sudo DEEPSEEK_REPO_URL="$DEEPSEEK_REPO_URL" \
@@ -108,19 +108,24 @@ sudo DEEPSEEK_REPO_URL="$DEEPSEEK_REPO_URL" \
 ```
 
 Use SSH repo URLs instead if either repo is private or you want push access
-from the VPS.
+from the VPS. If the CNB mirror is unavailable, fall back to:
 
-For the stable Tencent-first path, use the CNB mirror URL once the branch or
-tag exists there:
+```bash
+export DEEPSEEK_REPO_URL=https://github.com/Hmbown/DeepSeek-TUI.git
+```
+
+For stable release docs, confirm the CNB mirror has the branch or tag before
+using it:
 
 ```bash
 export DEEPSEEK_REPO_URL=https://cnb.cool/deepseek-tui.com/DeepSeek-TUI.git
 git ls-remote "$DEEPSEEK_REPO_URL" refs/heads/main refs/tags/v0.8.36
 ```
 
-The current CNB mirror receives `main` and release tags by default. Feature
-branches may need to be mirrored manually or cloned from GitHub until they are
-merged or tagged.
+The current CNB mirror receives `main` and release tags by default. This
+feature branch has been mirrored manually for the v0.8.36 Lighthouse setup.
+Future feature branches may need the same manual mirror step or a GitHub
+fallback until they are merged or tagged.
 
 If this deployment setup has not been pushed to Git yet, either push the branch
 first or copy this checkout to the VPS before running these commands. A fresh
