@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.39] - 2026-05-17
+
 ### Fixed
 
 - **Feishu/Lark bridge startup order is guarded.** The bridge now keeps
@@ -22,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cargo build` also covers `cargo build --release`. Denials keep the exact
   per-call fingerprint from #1617, so denying one call no longer over-blocks
   later, different calls to the same tool.
+- **`rlm_open` accepts a single source again.** Models that serialize the
+  unused optional `file_path` / `content` / `url` fields as empty strings no
+  longer trip the "provide exactly one" guard; blank/whitespace-only source
+  fields are treated as absent (#1712).
+
+### Documentation
+
+- **`cargo install` documents the Rust 1.88+ requirement.** The primary
+  Cargo install path now notes that older toolchains fail with
+  ``feature `edition2024` is required`` and to run `rustup update` (#1718).
 
 ## [0.8.38] - 2026-05-15
 
@@ -4301,7 +4313,8 @@ Welcome — and thank you.
 - Hooks system and config profiles
 - Example skills and launch assets
 
-[Unreleased]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.38...HEAD
+[Unreleased]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.39...HEAD
+[0.8.39]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.38...v0.8.39
 [0.8.38]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.37...v0.8.38
 [0.8.37]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.36...v0.8.37
 [0.8.36]: https://github.com/Hmbown/DeepSeek-TUI/compare/v0.8.35...v0.8.36
