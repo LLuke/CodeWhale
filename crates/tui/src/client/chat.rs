@@ -945,12 +945,26 @@ fn compact_tool_result_for_wire(
     let original_chars = content.chars().count();
     let sha = sha256_hex(content.as_bytes());
 
+    // Two independent size-and-kind predicates, deliberately decoupled:
+    //
+    // * `persist_eligible` — size only. Any large result (including a
+    //   mutation tool's big diff) is written to the SHA-addressed store
+    //   so that, if it gets truncated below, the elided middle stays
+    //   retrievable via `retrieve_tool_result`. Mutation tools must NOT
+    //   be excluded here: a >12k-char `write_file` diff that we truncate
+    //   without persisting would leave the model unable to recover it.
+    // * `dedup_eligible` — size AND non-mutation. Only this predicate
+    //   gates collapsing a later identical result to a
+    //   `<TOOL_RESULT_REF>`. Mutation-tool results are write
+    //   *confirmations*, never dedup-eligible (#1695): two identical
+    //   large `write_file` calls must each keep their full confirmation
+    //   inline.
+    //
     // Below the threshold, repeating the content is safer than asking
-    // the model to chase a reference. Above it, persist a SHA-addressed
-    // copy before any later message can point at that SHA. Mutation-tool
-    // results are write *confirmations*, never dedup-eligible (#1695).
-    let dedup_eligible =
-        original_chars >= TOOL_RESULT_DEDUP_MIN_CHARS && !is_mutation_tool(tool_name);
+    // the model to chase a reference, and there's no retrieval burden to
+    // satisfy, so both predicates are false.
+    let persist_eligible = original_chars >= TOOL_RESULT_DEDUP_MIN_CHARS;
+    let dedup_eligible = persist_eligible && !is_mutation_tool(tool_name);
 
     if dedup_eligible && let Some(previous) = seen_tool_results.get(&sha) {
         // Re-check persistence before emitting a ref. If the file is
@@ -981,11 +995,17 @@ fn compact_tool_result_for_wire(
         };
     }
 
-    if dedup_eligible {
-        // Persist before registering the content as dedupable. If the
-        // write fails, later occurrences stay inline instead of pointing
-        // at a file that was never created.
-        if persist_tool_result_for_sha(&sha, content) {
+    if persist_eligible {
+        // Persist any large result so a later truncation below stays
+        // retrievable by SHA — this includes mutation tools, whose big
+        // diffs are NOT dedup-eligible but still must be recoverable
+        // when elided. Only register the SHA as dedup-able (eligible to
+        // be replaced by a back-reference later) when `dedup_eligible`:
+        // if the write fails, skip registration so later occurrences
+        // stay inline instead of pointing at a file that was never
+        // created.
+        let persisted = persist_tool_result_for_sha(&sha, content);
+        if persisted && dedup_eligible {
             seen_tool_results.insert(
                 sha.clone(),
                 SeenToolResult {
@@ -2795,6 +2815,97 @@ mod stream_decoder_tests {
         assert!(
             read_second.starts_with("<TOOL_RESULT_REF sha=\""),
             "got: {read_second}"
+        );
+    }
+
+    #[test]
+    fn large_write_file_result_stays_inline_but_is_persisted_for_retrieval() {
+        // Decoupling regression (#1695 follow-up): a SINGLE very large
+        // `write_file` result must (a) never collapse to a
+        // `<TOOL_RESULT_REF>` (mutation confirmations stay inline) yet
+        // (b) still be persisted to the SHA store so the content elided
+        // by truncation remains retrievable via `retrieve_tool_result`.
+        // Before the fix, folding `!is_mutation_tool` into the single
+        // `dedup_eligible` gate also disabled persistence, so a >12k
+        // mutation diff was truncated AND unrecoverable.
+        let _guard = crate::tools::truncate::TEST_SPILLOVER_GUARD
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let prior = crate::tools::truncate::set_test_spillover_root(Some(
+            tmp.path().join(".deepseek").join("tool_outputs"),
+        ));
+        struct Restore(Option<std::path::PathBuf>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                crate::tools::truncate::set_test_spillover_root(self.0.take());
+            }
+        }
+        let _restore = Restore(prior);
+
+        // > TOOL_RESULT_SENT_CHAR_BUDGET (12_000) so the wire path
+        // truncates and would need a SHA to recover the middle.
+        let big_diff = "D".repeat(20_000);
+        let sha = sha256_hex(big_diff.as_bytes());
+
+        let messages = vec![
+            tool_use_message("w-1", "write_file", json!({"path": "huge.rs"})),
+            tool_result_message("w-1", &big_diff),
+            tool_use_message("w-2", "write_file", json!({"path": "huge.rs"})),
+            tool_result_message("w-2", &big_diff),
+        ];
+        let built = build_chat_messages(None, &messages, "deepseek-v4-flash");
+        let first = tool_message_content(&built, 0);
+        let second = tool_message_content(&built, 1);
+
+        // (a) Both confirmations stay inline — truncated, never a ref.
+        assert!(
+            first.contains("[TOOL_RESULT_TRUNCATED]"),
+            "first should be truncated, got: {first}"
+        );
+        assert!(
+            !first.contains("<TOOL_RESULT_REF"),
+            "first must not be a dedup ref, got: {first}"
+        );
+        assert!(
+            !second.contains("<TOOL_RESULT_REF"),
+            "second identical write_file must stay inline (#1695), got: {second}"
+        );
+        assert!(
+            second.contains("[TOOL_RESULT_TRUNCATED]"),
+            "second should also be inline-truncated, got: {second}"
+        );
+        assert!(
+            first.contains(&format!("sha256: {sha}")),
+            "truncation block should advertise the recovery SHA, got: {first}"
+        );
+
+        // (b) The full content was persisted to the SHA store and is
+        // retrievable — the seam `persist_tool_result_for_sha` writes
+        // to and `retrieve_tool_result ref=sha:` reads back from.
+        let path = crate::tools::truncate::sha_spillover_path(&sha)
+            .expect("sha spillover path resolvable under test root");
+        assert!(path.exists(), "large write_file output not persisted: {path:?}");
+        let persisted = std::fs::read_to_string(&path).expect("read persisted spillover");
+        assert_eq!(
+            persisted, big_diff,
+            "persisted content must match the original write_file result verbatim"
+        );
+
+        // Sanity: a large NON-mutation result still dedups (back-ref on
+        // the second sighting) — decoupling didn't regress #1695's
+        // preserved read-path behavior.
+        let read_messages = vec![
+            tool_use_message("r-1", "read_file", json!({"path": "huge.rs"})),
+            tool_result_message("r-1", &big_diff),
+            tool_use_message("r-2", "read_file", json!({"path": "huge.rs"})),
+            tool_result_message("r-2", &big_diff),
+        ];
+        let read_built = build_chat_messages(None, &read_messages, "deepseek-v4-flash");
+        let read_second = tool_message_content(&read_built, 1);
+        assert!(
+            read_second.starts_with("<TOOL_RESULT_REF sha=\""),
+            "large read_file must still dedup to a ref, got: {read_second}"
         );
     }
 
