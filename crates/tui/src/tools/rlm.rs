@@ -83,7 +83,7 @@ impl ToolSpec for RlmOpenTool {
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
         let source_count = ["file_path", "content", "url"]
             .iter()
-            .filter(|key| input.get(**key).and_then(Value::as_str).is_some())
+            .filter(|key| non_empty_source(&input, key).is_some())
             .count();
         if source_count != 1 {
             return Err(ToolError::invalid_input(
@@ -417,7 +417,7 @@ async fn load_source(
     input: &Value,
     context: &ToolContext,
 ) -> Result<(String, String, Option<String>), ToolError> {
-    if let Some(path) = input.get("file_path").and_then(Value::as_str) {
+    if let Some(path) = non_empty_source(input, "file_path") {
         let resolved = context.resolve_path(path)?;
         let body = tokio::fs::read_to_string(&resolved).await.map_err(|e| {
             ToolError::execution_failed(format!("rlm_open: read {}: {e}", resolved.display()))
@@ -425,7 +425,7 @@ async fn load_source(
         return Ok((body, "file".to_string(), Some(path.to_string())));
     }
 
-    if let Some(content) = input.get("content").and_then(Value::as_str) {
+    if let Some(content) = non_empty_source(input, "content") {
         if content.chars().count() > MAX_INLINE_CONTENT_CHARS {
             return Err(ToolError::invalid_input(format!(
                 "rlm_open: inline content is {} chars (cap {MAX_INLINE_CONTENT_CHARS})",
@@ -435,9 +435,7 @@ async fn load_source(
         return Ok((content.to_string(), "content".to_string(), None));
     }
 
-    let url = input
-        .get("url")
-        .and_then(Value::as_str)
+    let url = non_empty_source(input, "url")
         .ok_or_else(|| ToolError::invalid_input("rlm_open: missing source"))?;
     let result = FetchUrlTool
         .execute(json!({"url": url, "format": "raw"}), context)
@@ -466,6 +464,17 @@ async fn get_session(
     sessions.get(name).cloned().ok_or_else(|| {
         ToolError::invalid_input(format!("unknown RLM context `{name}`; call rlm_open first"))
     })
+}
+
+/// Return the raw string at `field` only when it is present and not
+/// whitespace-only. Some models/runtimes serialize omitted optional string
+/// fields as `""`, so a strict presence check would treat every source as
+/// supplied and fail the "exactly one" guard (#1712).
+fn non_empty_source<'a>(input: &'a Value, field: &str) -> Option<&'a str> {
+    input
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn required_non_empty_str<'a>(input: &'a Value, field: &str) -> Result<&'a str, ToolError> {
@@ -517,6 +526,38 @@ mod tests {
         assert_eq!(RlmEvalTool::new(None).name(), "rlm_eval");
         assert_eq!(RlmConfigureTool.name(), "rlm_configure");
         assert_eq!(RlmCloseTool.name(), "rlm_close");
+    }
+
+    #[test]
+    fn non_empty_source_treats_blank_strings_as_absent() {
+        let input = json!({"file_path": "", "content": "   ", "url": "https://x"});
+        assert_eq!(non_empty_source(&input, "file_path"), None);
+        assert_eq!(non_empty_source(&input, "content"), None);
+        assert_eq!(non_empty_source(&input, "url"), Some("https://x"));
+    }
+
+    #[tokio::test]
+    async fn rlm_open_ignores_blank_sibling_source_fields() {
+        // Regression for #1712: models often serialize the unused optional
+        // source fields as "", which must not trip the "exactly one" guard.
+        let ctx = ctx();
+        RlmOpenTool
+            .execute(
+                json!({
+                    "name": "blank-siblings",
+                    "content": "alpha\nbeta",
+                    "file_path": "",
+                    "url": ""
+                }),
+                &ctx,
+            )
+            .await
+            .expect("open should ignore empty file_path/url siblings");
+
+        RlmCloseTool
+            .execute(json!({"name": "blank-siblings"}), &ctx)
+            .await
+            .expect("close");
     }
 
     #[tokio::test]
