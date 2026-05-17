@@ -923,6 +923,18 @@ fn turn_meta_budget_json(turn_meta: &TurnMetaBudget) -> Value {
     })
 }
 
+/// Mutating/write tools whose result body is a *confirmation* (it embeds
+/// the unified diff + summary of what was just written), not retrievable
+/// reference data. Two identical large `write_file` calls must each keep
+/// their full confirmation inline: collapsing the later one to a
+/// `<TOOL_RESULT_REF sha="..." />` makes the model lose the write-success
+/// context and behave as if the file is missing (issue #1695). Read-style
+/// tools (`read_file`, `grep_files`, `exec_shell`, …) are unaffected and
+/// still dedup normally.
+fn is_mutation_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "write_file" | "edit_file" | "apply_patch")
+}
+
 fn compact_tool_result_for_wire(
     tool_name: &str,
     input: &Value,
@@ -935,8 +947,10 @@ fn compact_tool_result_for_wire(
 
     // Below the threshold, repeating the content is safer than asking
     // the model to chase a reference. Above it, persist a SHA-addressed
-    // copy before any later message can point at that SHA.
-    let dedup_eligible = original_chars >= TOOL_RESULT_DEDUP_MIN_CHARS;
+    // copy before any later message can point at that SHA. Mutation-tool
+    // results are write *confirmations*, never dedup-eligible (#1695).
+    let dedup_eligible =
+        original_chars >= TOOL_RESULT_DEDUP_MIN_CHARS && !is_mutation_tool(tool_name);
 
     if dedup_eligible && let Some(previous) = seen_tool_results.get(&sha) {
         // Re-check persistence before emitting a ref. If the file is
@@ -2740,6 +2754,47 @@ mod stream_decoder_tests {
         assert!(
             second.contains("retrieve: retrieve_tool_result ref=sha:"),
             "got: {second}"
+        );
+    }
+
+    #[test]
+    fn request_builder_never_dedups_large_identical_write_file_confirmations() {
+        // A `write_file` result embeds the unified diff + summary; it is a
+        // confirmation, not retrievable data. Two identical >1024-char
+        // write_file results must BOTH stay inline — collapsing the second
+        // to a SHA ref makes the model lose write-success context and
+        // report the file as missing (#1695).
+        let output = "A".repeat(2_000);
+        let messages = vec![
+            tool_use_message("tool-1", "write_file", json!({"path": "big.txt"})),
+            tool_result_message("tool-1", &output),
+            tool_use_message("tool-2", "write_file", json!({"path": "big.txt"})),
+            tool_result_message("tool-2", &output),
+        ];
+
+        let built = build_chat_messages(None, &messages, "deepseek-v4-flash");
+        let first = tool_message_content(&built, 0);
+        let second = tool_message_content(&built, 1);
+
+        assert_eq!(first, output);
+        assert_eq!(second, output);
+        assert!(!second.contains("<TOOL_RESULT_REF"), "got: {second}");
+
+        // Non-mutation tools still dedup: an identical large read_file
+        // result collapses to a retrievable SHA ref.
+        let read_messages = vec![
+            tool_use_message("read-1", "read_file", json!({"path": "README.md"})),
+            tool_result_message("read-1", &output),
+            tool_use_message("read-2", "read_file", json!({"path": "README.md"})),
+            tool_result_message("read-2", &output),
+        ];
+        let read_built = build_chat_messages(None, &read_messages, "deepseek-v4-flash");
+        let read_first = tool_message_content(&read_built, 0);
+        let read_second = tool_message_content(&read_built, 1);
+        assert_eq!(read_first, output);
+        assert!(
+            read_second.starts_with("<TOOL_RESULT_REF sha=\""),
+            "got: {read_second}"
         );
     }
 
