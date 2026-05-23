@@ -356,14 +356,17 @@ mod tests {
         );
 
         let deadline = Instant::now() + Duration::from_secs(2);
+        let mut last_body = String::new();
         while Instant::now() < deadline {
             if let Ok(body) = std::fs::read_to_string(&marker) {
-                assert_eq!(body, "copied");
-                return;
+                if body == "copied" {
+                    return;
+                }
+                last_body = body;
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        panic!("clipboard helper did not receive stdin");
+        panic!("clipboard helper did not receive stdin; last body: {last_body:?}");
     }
 
     #[test]
