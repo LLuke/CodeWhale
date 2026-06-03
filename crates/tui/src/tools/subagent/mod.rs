@@ -1698,9 +1698,7 @@ impl SubAgentManager {
             if let Some(role) = role {
                 let normalized = normalize_role_alias(&role)
                     .ok_or_else(|| {
-                        anyhow!(
-                            "Invalid role alias '{role}'. Use: {VALID_ROLE_ALIASES}"
-                        )
+                        anyhow!("Invalid role alias '{role}'. Use: {VALID_ROLE_ALIASES}")
                     })?
                     .to_string();
                 if agent.assignment.role.as_deref() != Some(normalized.as_str()) {
@@ -3719,7 +3717,10 @@ async fn run_subagent_task(task: SubAgentTask) {
     match &result {
         Ok(res) => manager.update_from_result(&agent_id, res.clone()),
         Err(err) => {
-            manager.update_failed(&agent_id, annotate_child_model_error(&err.to_string(), &model_id));
+            manager.update_failed(
+                &agent_id,
+                annotate_child_model_error(&err.to_string(), &model_id),
+            );
         }
     }
 

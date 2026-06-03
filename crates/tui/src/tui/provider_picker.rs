@@ -112,6 +112,7 @@ impl ProviderPickerView {
             ApiProvider::Sglang => "SGLANG_API_KEY",
             ApiProvider::Vllm => "VLLM_API_KEY",
             ApiProvider::Ollama => "OLLAMA_API_KEY",
+            ApiProvider::Huggingface => "HUGGINGFACE_API_KEY / HF_TOKEN",
         }
     }
 
@@ -119,6 +120,10 @@ impl ProviderPickerView {
         match provider {
             ApiProvider::Moonshot if kimi_cli_credentials_present() => {
                 "(Kimi CLI OAuth ready)".to_string()
+            }
+            ApiProvider::XiaomiMimo if has_key => "(configured; token-plan endpoint)".to_string(),
+            ApiProvider::XiaomiMimo => {
+                "(needs API key; token-plan endpoint by default)".to_string()
             }
             ApiProvider::Ollama => "self-hosted; defaults to http://localhost:11434".to_string(),
             ApiProvider::Sglang | ApiProvider::Vllm if has_key => {
@@ -487,7 +492,8 @@ mod tests {
                 "Moonshot/Kimi",
                 "SGLang",
                 "vLLM",
-                "Ollama"
+                "Ollama",
+                "Hugging Face"
             ]
         );
     }
@@ -522,7 +528,7 @@ mod tests {
         let mut picker = ProviderPickerView::new(ApiProvider::Deepseek, &config);
 
         picker.handle_key(key(KeyCode::Up));
-        assert_eq!(picker.selected_provider(), ApiProvider::Ollama);
+        assert_eq!(picker.selected_provider(), ApiProvider::Huggingface);
 
         picker.handle_key(key(KeyCode::Down));
         assert_eq!(picker.selected_provider(), ApiProvider::Deepseek);

@@ -3246,9 +3246,17 @@ fn missing_shell_tool_error_message_names_allow_shell_gate() {
         assert!(message.contains("not available in the current tool catalog"));
         assert!(message.contains("allow_shell"), "{tool_name}: {message}");
         assert!(
-            message.contains("trusted workspaces"),
+            message.contains("/config allow_shell true"),
             "{tool_name}: {message}"
         );
+        assert!(message.contains("--save"), "{tool_name}: {message}");
+        assert!(message.contains("Agent mode"), "{tool_name}: {message}");
+        assert!(
+            message.contains("approval gating"),
+            "{tool_name}: {message}"
+        );
+        assert!(!message.contains("YOLO"), "{tool_name}: {message}");
+        assert!(!message.contains("auto-approve"), "{tool_name}: {message}");
         assert!(
             message.contains(TOOL_SEARCH_BM25_NAME),
             "{tool_name}: {message}"
@@ -3265,7 +3273,11 @@ fn missing_shell_tool_error_message_keeps_allow_shell_hint_with_suggestions() {
     assert!(message.contains("Did you mean:"));
     assert!(message.contains("exec"));
     assert!(message.contains("allow_shell"));
-    assert!(message.contains("trusted workspaces"));
+    assert!(message.contains("/config allow_shell true"));
+    assert!(message.contains("--save"));
+    assert!(message.contains("Agent mode"));
+    assert!(!message.contains("YOLO"));
+    assert!(!message.contains("auto-approve"));
     assert!(message.contains(TOOL_SEARCH_BM25_NAME));
 }
 

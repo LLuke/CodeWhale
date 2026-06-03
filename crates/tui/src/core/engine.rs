@@ -553,6 +553,7 @@ impl Engine {
             ApiProvider::Sglang => "SGLANG_API_KEY",
             ApiProvider::Vllm => "VLLM_API_KEY",
             ApiProvider::Ollama => "OLLAMA_API_KEY",
+            ApiProvider::Huggingface => "HUGGINGFACE_API_KEY/HF_TOKEN",
         };
 
         Some(format!(

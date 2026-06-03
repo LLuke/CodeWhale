@@ -1116,7 +1116,7 @@ async fn main() -> Result<()> {
     };
 
     // Default: Interactive TUI
-    // --yolo starts in YOLO mode (shell + trust + auto-approve)
+    // --yolo starts in YOLO mode (auto-approve; shell if allow_shell=true)
     run_interactive(&cli, &config, resume_session_id, None).await
 }
 
@@ -2028,6 +2028,10 @@ fn run_setup_status(config: &Config, workspace: &Path) -> Result<()> {
                     "VOLCENGINE_API_KEY",
                     "codewhale auth set --provider volcengine",
                 ),
+                crate::config::ApiProvider::Huggingface => (
+                    "HUGGINGFACE_API_KEY/HF_TOKEN",
+                    "codewhale auth set --provider huggingface",
+                ),
                 crate::config::ApiProvider::Deepseek | crate::config::ApiProvider::DeepseekCN => {
                     ("DEEPSEEK_API_KEY", "codewhale auth set --provider deepseek")
                 }
@@ -2052,6 +2056,7 @@ fn run_setup_status(config: &Config, workspace: &Path) -> Result<()> {
                     crate::config::ApiProvider::Sglang => "sglang",
                     crate::config::ApiProvider::Vllm => "vllm",
                     crate::config::ApiProvider::Ollama => "ollama",
+                    crate::config::ApiProvider::Huggingface => "huggingface",
                     crate::config::ApiProvider::Deepseek
                     | crate::config::ApiProvider::DeepseekCN => "deepseek",
                 }

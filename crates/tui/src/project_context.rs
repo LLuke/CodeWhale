@@ -785,7 +785,8 @@ fn load_global_agents_context(workspace: &Path, home_dir: Option<&Path>) -> Opti
         if path.exists() && path.is_file() {
             match load_context_file(&path) {
                 Ok(content) => {
-                    if path.file_name().and_then(|n| n.to_str()) == Some(DEPRECATED_WHALE_FILENAME) {
+                    if path.file_name().and_then(|n| n.to_str()) == Some(DEPRECATED_WHALE_FILENAME)
+                    {
                         tracing::warn!("{WHALE_DEPRECATION_WARNING}");
                         warnings.push(WHALE_DEPRECATION_WARNING.to_string());
                     }
@@ -1182,7 +1183,9 @@ mod tests {
         assert!(!instructions.contains("WHALE legacy"), "{instructions}");
         // No deprecation warning since AGENTS.md won.
         assert!(
-            !ctx.warnings.iter().any(|w| w.contains("WHALE.md is deprecated")),
+            !ctx.warnings
+                .iter()
+                .any(|w| w.contains("WHALE.md is deprecated")),
             "{:?}",
             ctx.warnings
         );
@@ -1199,7 +1202,9 @@ mod tests {
             "legacy WHALE.md must still be read"
         );
         assert!(
-            ctx.warnings.iter().any(|w| w.contains("WHALE.md is deprecated")),
+            ctx.warnings
+                .iter()
+                .any(|w| w.contains("WHALE.md is deprecated")),
             "expected deprecation warning, got {:?}",
             ctx.warnings
         );
@@ -1255,7 +1260,10 @@ mod tests {
         .expect("write bad constitution");
 
         let ctx = load_project_context_with_parents(tmp.path());
-        assert!(ctx.constitution_block.is_none(), "no block for invalid JSON");
+        assert!(
+            ctx.constitution_block.is_none(),
+            "no block for invalid JSON"
+        );
         assert!(
             ctx.warnings.iter().any(|w| w.contains("Failed to parse")),
             "expected parse warning, got {:?}",

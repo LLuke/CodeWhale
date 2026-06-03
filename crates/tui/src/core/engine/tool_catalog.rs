@@ -544,8 +544,9 @@ pub(super) fn missing_tool_error_message(tool_name: &str, catalog: &[Tool]) -> S
 }
 
 fn shell_tool_allow_shell_hint() -> &'static str {
-    "Shell tools are gated by `allow_shell`; enable `allow_shell = true` for trusted workspaces, \
-     or switch to an auto-approve mode that permits shell access"
+    "Shell tools require top-level `allow_shell = true`. \
+     In Agent mode, run `/config allow_shell true` for this session or add `--save` \
+     for future sessions; the next turn will expose shell with approval gating"
 }
 
 fn is_shell_tool_name(tool_name: &str) -> bool {

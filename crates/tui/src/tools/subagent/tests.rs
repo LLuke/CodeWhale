@@ -1114,8 +1114,14 @@ async fn spawn_duplicate_session_name_error_names_conflicting_agent() {
             .expect_err("duplicate session name must error")
     };
     let msg = err.to_string();
-    assert!(msg.contains(&existing_id), "names the conflicting agent_id: {msg}");
-    assert!(msg.contains("running"), "includes the conflicting status: {msg}");
+    assert!(
+        msg.contains(&existing_id),
+        "names the conflicting agent_id: {msg}"
+    );
+    assert!(
+        msg.contains("running"),
+        "includes the conflicting status: {msg}"
+    );
 }
 
 #[tokio::test]
@@ -1624,8 +1630,14 @@ fn annotate_child_model_error_adds_actionable_hint() {
     // recovery path, while unrelated errors pass through unchanged.
     let auth = annotate_child_model_error("403 Forbidden", "kimi-k2");
     assert!(auth.contains("kimi-k2"), "names the model: {auth}");
-    assert!(auth.contains("agent_open"), "names the recovery path: {auth}");
-    assert!(auth.contains("403 Forbidden"), "preserves the original: {auth}");
+    assert!(
+        auth.contains("agent_open"),
+        "names the recovery path: {auth}"
+    );
+    assert!(
+        auth.contains("403 Forbidden"),
+        "preserves the original: {auth}"
+    );
 
     let unrelated = annotate_child_model_error("connection reset by peer", "kimi-k2");
     assert_eq!(unrelated, "connection reset by peer");

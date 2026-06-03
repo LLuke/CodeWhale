@@ -5323,6 +5323,8 @@ async fn switch_provider(
     }
 
     let new_model = config.default_model();
+    let new_base_url = config.deepseek_base_url();
+    let new_endpoint = display_base_url_host(&new_base_url);
     let cache_scope_changed = previous_provider != target || previous_model != new_model;
     app.api_provider = target;
     app.model_ids_passthrough = config.model_ids_pass_through();
@@ -5363,14 +5365,19 @@ async fn switch_provider(
 
     app.add_message(HistoryCell::System {
         content: format!(
-            "Provider switched: {} → {}\nModel: {} → {}",
+            "Provider switched: {} → {}\nModel: {} → {}\nEndpoint: {}",
             previous_provider.as_str(),
             target.as_str(),
             previous_model,
-            new_model
+            new_model,
+            new_endpoint
         ),
     });
-    app.status_message = Some(format!("Provider: {}", target.as_str()));
+    app.status_message = Some(format!(
+        "Provider: {} via {}",
+        target.as_str(),
+        new_endpoint
+    ));
 
     // Persist the provider choice so it survives restarts.
     if let Ok(mut settings) = crate::settings::Settings::load() {
@@ -5404,6 +5411,18 @@ fn root_base_url_belongs_to_non_deepseek_provider(base_url: &str) -> bool {
     ]
     .iter()
     .any(|needle| lower.contains(needle))
+}
+
+fn display_base_url_host(base_url: &str) -> String {
+    let without_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    without_scheme
+        .split('/')
+        .next()
+        .filter(|host| !host.is_empty())
+        .unwrap_or(base_url)
+        .to_string()
 }
 
 fn sync_config_provider_from_app(config: &mut Config, app: &App) {
@@ -5519,29 +5538,21 @@ async fn apply_command_result(
                 let _ = engine_handle.send(Op::ListSubAgents).await;
             }
             AppAction::FetchModels => {
-                if crate::config::provider_passes_model_through(config.api_provider()) {
-                    app.add_message(HistoryCell::System {
-                        content: format!(
-                            "/models is not supported by the {} provider.",
-                            config.api_provider().display_name()
-                        ),
-                    });
-                } else {
-                    app.status_message = Some("Fetching models...".to_string());
-                    match fetch_available_models(config).await {
-                        Ok(models) => {
-                            app.add_message(HistoryCell::System {
-                                content: format_helpers::available_models_message(
-                                    &app.model, &models,
-                                ),
-                            });
-                            app.status_message = Some(format!("Found {} model(s)", models.len()));
-                        }
-                        Err(error) => {
-                            app.add_message(HistoryCell::System {
-                                content: format!("Failed to fetch models: {error}"),
-                            });
-                        }
+                app.status_message = Some("Fetching models...".to_string());
+                match fetch_available_models(config).await {
+                    Ok(models) => {
+                        app.add_message(HistoryCell::System {
+                            content: format_helpers::available_models_message(&app.model, &models),
+                        });
+                        app.status_message = Some(format!("Found {} model(s)", models.len()));
+                    }
+                    Err(error) => {
+                        app.add_message(HistoryCell::System {
+                            content: format!(
+                                "Failed to fetch models from {}: {error}",
+                                config.api_provider().display_name()
+                            ),
+                        });
                     }
                 }
             }
@@ -6613,6 +6624,7 @@ fn render(f: &mut Frame, app: &mut App) {
             crate::config::ApiProvider::Sglang => Some("SGLang"),
             crate::config::ApiProvider::Vllm => Some("vLLM"),
             crate::config::ApiProvider::Ollama => Some("Ollama"),
+            crate::config::ApiProvider::Huggingface => Some("HF"),
         };
         let status_indicator_started_at = if app.low_motion {
             None
@@ -7626,6 +7638,7 @@ async fn apply_provider_picker_api_key(
             ApiProvider::Sglang => &mut providers.sglang,
             ApiProvider::Vllm => &mut providers.vllm,
             ApiProvider::Ollama => &mut providers.ollama,
+            ApiProvider::Huggingface => &mut providers.huggingface,
         };
         entry.api_key = Some(api_key);
     }
@@ -7682,6 +7695,7 @@ fn set_provider_auth_mode_in_memory(config: &mut Config, provider: ApiProvider, 
         ApiProvider::Sglang => &mut providers.sglang,
         ApiProvider::Vllm => &mut providers.vllm,
         ApiProvider::Ollama => &mut providers.ollama,
+        ApiProvider::Huggingface => &mut providers.huggingface,
     };
     entry.auth_mode = Some(auth_mode);
 }

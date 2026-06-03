@@ -531,6 +531,28 @@ impl Default for ModelRegistry {
                 supports_tools: true,
                 supports_reasoning: false,
             },
+            ModelInfo {
+                id: "deepseek-ai/DeepSeek-V4-Pro".to_string(),
+                provider: ProviderKind::Huggingface,
+                aliases: vec![
+                    "deepseek-v4-pro".to_string(),
+                    "hf-deepseek-v4-pro".to_string(),
+                ],
+                supports_tools: true,
+                supports_reasoning: true,
+            },
+            ModelInfo {
+                id: "deepseek-ai/DeepSeek-V4-Flash".to_string(),
+                provider: ProviderKind::Huggingface,
+                aliases: vec![
+                    "deepseek-v4-flash".to_string(),
+                    "deepseek-chat".to_string(),
+                    "deepseek-reasoner".to_string(),
+                    "hf-deepseek-v4-flash".to_string(),
+                ],
+                supports_tools: true,
+                supports_reasoning: true,
+            },
         ];
         Self::new(models)
     }

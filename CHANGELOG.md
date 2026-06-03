@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.53] - 2026-06-03
+
+### Added
+
+- **Hugging Face Inference Providers.** Added `huggingface` as a native
+  provider route (`/provider huggingface`). Supports `HUGGINGFACE_API_KEY`
+  or `HF_TOKEN` for auth, `HUGGINGFACE_BASE_URL` and `HUGGINGFACE_MODEL`
+  for overrides, and `deepseek-ai/DeepSeek-V4-Pro` / `deepseek-ai/DeepSeek-V4-Flash`
+  as default models. Org-prefixed model IDs pass through.
+
+### Fixed
+
+- **Agent-mode shell error copy.** The missing-tool error for shell tools
+  now directs users to `allow_shell = true` instead of nudging toward YOLO
+  mode. `/config` surfaces `allow_shell` in the Permissions section.
+- **Provider description.** `/provider` command description is now neutral
+  instead of recommending specific providers.
+
 ## [0.8.52] - 2026-06-03
 
 ### Added

@@ -1117,6 +1117,7 @@ pub(super) fn apply_reasoning_effort(
             | ApiProvider::Atlascloud
             | ApiProvider::WanjieArk
             | ApiProvider::Arcee
+            | ApiProvider::Huggingface
             | ApiProvider::Moonshot
             | ApiProvider::Ollama => {}
             ApiProvider::NvidiaNim => {
@@ -1151,7 +1152,7 @@ pub(super) fn apply_reasoning_effort(
             ApiProvider::XiaomiMimo => {
                 body["thinking"] = json!({ "type": "enabled" });
             }
-            ApiProvider::Arcee => {
+            ApiProvider::Arcee | ApiProvider::Huggingface => {
                 let value = match normalized.as_str() {
                     "minimal" => "minimal",
                     "low" => "low",
@@ -1205,7 +1206,7 @@ pub(super) fn apply_reasoning_effort(
             ApiProvider::XiaomiMimo => {
                 body["thinking"] = json!({ "type": "enabled" });
             }
-            ApiProvider::Arcee => {
+            ApiProvider::Arcee | ApiProvider::Huggingface => {
                 body["reasoning_effort"] = json!("high");
             }
             ApiProvider::Fireworks => {

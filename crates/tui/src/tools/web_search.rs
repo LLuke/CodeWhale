@@ -817,7 +817,7 @@ impl WebSearchTool {
 
                     if !status.is_success() {
                         let msg = match status.as_u16() {
-                            401 | 403 => "Volcengine API key rejected — check VOLCENGINE_API_KEY or `[search] api_key` in config.toml".to_string(),
+                            401 | 403 => "Volcengine API key rejected — check `[search] api_key` in config.toml or VOLCENGINE_API_KEY / VOLCENGINE_ARK_API_KEY / ARK_API_KEY".to_string(),
                             429 => "Volcengine API rate-limited — wait and retry, or check your quota".to_string(),
                             _ => {
                                 let truncated = truncate_error_body(&body);
@@ -1909,6 +1909,7 @@ mod tests {
         use crate::config::SearchProvider;
         use crate::tools::spec::{ToolContext, ToolSpec};
 
+        let _guard = crate::test_support::lock_test_env();
         let prev_volc = std::env::var_os("VOLCENGINE_API_KEY");
         let prev_volc_ark = std::env::var_os("VOLCENGINE_ARK_API_KEY");
         let prev_ark = std::env::var_os("ARK_API_KEY");
