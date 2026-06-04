@@ -24,7 +24,9 @@ use crate::tools::plan::StepStatus;
 use crate::tools::subagent::SubAgentStatus;
 use crate::tools::todo::TodoStatus;
 
-use super::app::{App, SidebarFocus, SidebarHoverSection, SidebarHoverState, TaskPanelEntry};
+use super::app::{
+    App, SidebarFocus, SidebarHoverRow, SidebarHoverSection, SidebarHoverState, TaskPanelEntry,
+};
 use super::history::{GenericToolCell, HistoryCell, ToolCell, ToolStatus, summarize_tool_output};
 use super::subagent_routing::active_fanout_counts;
 use super::ui_text::{concise_shell_command_label, truncate_line_to_width};
@@ -331,6 +333,155 @@ fn work_panel_lines(
     lines
 }
 
+fn work_panel_hover_texts(
+    summary: &SidebarWorkSummary,
+    content_width: usize,
+    max_rows: usize,
+) -> Vec<String> {
+    let mut texts = Vec::with_capacity(max_rows.max(4));
+
+    if let Some(objective) = summary.goal_objective.as_deref()
+        && !objective.trim().is_empty()
+        && texts.len() < max_rows
+    {
+        let icon = if summary.goal_completed { "✓" } else { "◆" };
+        texts.push(format!("{icon} {objective}"));
+
+        if let Some(started) = summary.goal_started_at
+            && texts.len() < max_rows
+        {
+            let elapsed = crate::tui::notifications::humanize_duration(started.elapsed());
+            let elapsed_str = if summary.goal_completed {
+                format!("completed in {elapsed}")
+            } else {
+                format!("elapsed: {elapsed}")
+            };
+            texts.push(elapsed_str);
+        }
+
+        if let Some(budget) = summary.goal_token_budget
+            && texts.len() < max_rows
+        {
+            let pct = if budget > 0 {
+                ((summary.tokens_used as f64 / budget as f64) * 100.0).min(100.0)
+            } else {
+                0.0
+            };
+            let bar_width = content_width.min(20);
+            let filled = ((pct / 100.0) * bar_width as f64) as usize;
+            let bar = format!(
+                "[{}{}] {:.0}%",
+                "█".repeat(filled),
+                "░".repeat(bar_width.saturating_sub(filled)),
+                pct
+            );
+            texts.push(format!(
+                "tokens: {}/{} {}",
+                summary.tokens_used, budget, bar
+            ));
+        }
+    }
+
+    if summary.state_updating && texts.len() < max_rows {
+        texts.push("Work state updating...".to_string());
+    }
+
+    if !summary.checklist_items.is_empty() && texts.len() < max_rows {
+        let total = summary.checklist_items.len();
+        let completed = summary
+            .checklist_items
+            .iter()
+            .filter(|item| item.status == TodoStatus::Completed)
+            .count();
+        texts.push(format!(
+            "{}% complete ({completed}/{total})",
+            summary.checklist_completion_pct
+        ));
+
+        let reserve_for_strategy = if summary.has_strategy() { 2 } else { 0 };
+        let available_item_rows = max_rows
+            .saturating_sub(texts.len())
+            .saturating_sub(reserve_for_strategy)
+            .min(summary.checklist_items.len());
+        let max_items =
+            if summary.checklist_items.len() > available_item_rows && available_item_rows > 1 {
+                available_item_rows - 1
+            } else {
+                available_item_rows
+            };
+        let start = checklist_window_start(&summary.checklist_items, max_items);
+        let end = start
+            .saturating_add(max_items)
+            .min(summary.checklist_items.len());
+        for item in summary.checklist_items[start..end].iter() {
+            let prefix = match item.status {
+                TodoStatus::Pending => "[ ]",
+                TodoStatus::InProgress => "[~]",
+                TodoStatus::Completed => "[✓]",
+            };
+            texts.push(format!("{prefix} #{} {}", item.id, item.content));
+        }
+
+        let earlier = start;
+        let later = summary.checklist_items.len().saturating_sub(end);
+        let remaining = earlier.saturating_add(later);
+        if remaining > 0 && texts.len() < max_rows {
+            let label = match (earlier, later) {
+                (0, later) => format!("+{later} more checklist items"),
+                (earlier, 0) => format!("+{earlier} earlier checklist items"),
+                (earlier, later) => format!("+{earlier} earlier, +{later} later"),
+            };
+            texts.push(label);
+        }
+    }
+
+    if summary.has_strategy() && texts.len() < max_rows {
+        if summary.checklist_items.is_empty() && !summary.strategy_steps.is_empty() {
+            let (pending, in_progress, completed) = summary.strategy_counts();
+            let total = pending + in_progress + completed;
+            texts.push(format!(
+                "Strategy metadata {}% complete ({completed}/{total})",
+                summary.strategy_progress_percent()
+            ));
+        } else {
+            texts.push("Strategy metadata".to_string());
+        }
+
+        if let Some(explanation) = summary.strategy_explanation.as_deref()
+            && texts.len() < max_rows
+        {
+            texts.push(explanation.to_string());
+        }
+
+        let max_steps = max_rows
+            .saturating_sub(texts.len())
+            .min(summary.strategy_steps.len());
+        for step in summary.strategy_steps.iter().take(max_steps) {
+            let prefix = match step.status {
+                StepStatus::Pending => "[ ]",
+                StepStatus::InProgress => "[~]",
+                StepStatus::Completed => "[✓]",
+            };
+            let mut text = format!("{prefix} {}", step.text);
+            if !step.elapsed.is_empty() {
+                let _ = write!(text, " ({})", step.elapsed);
+            }
+            texts.push(text);
+        }
+
+        let remaining = summary.strategy_steps.len().saturating_sub(max_steps);
+        if remaining > 0 && texts.len() < max_rows {
+            texts.push(format!("+{remaining} more strategy steps"));
+        }
+    }
+
+    if texts.is_empty() {
+        texts.push("No active work".to_string());
+    }
+
+    texts
+}
+
 fn push_work_goal_lines(
     summary: &SidebarWorkSummary,
     content_width: usize,
@@ -587,7 +738,7 @@ fn render_sidebar_work(f: &mut Frame, area: Rect, app: &mut App) {
         &app.ui_theme,
     );
 
-    let full_texts: Vec<String> = lines.iter().map(|l| spans_to_text(&l.spans)).collect();
+    let full_texts = work_panel_hover_texts(&summary, content_width.max(1), usable_rows);
     render_sidebar_section(f, area, "Work", lines, full_texts, app);
 }
 
@@ -600,7 +751,7 @@ fn render_sidebar_tasks(f: &mut Frame, area: Rect, app: &mut App) {
     let usable_rows = area.height.saturating_sub(3) as usize;
     let lines = task_panel_lines(app, content_width.max(1), usable_rows.max(1));
 
-    let full_texts: Vec<String> = lines.iter().map(|l| spans_to_text(&l.spans)).collect();
+    let full_texts = task_panel_hover_texts(app, usable_rows.max(1));
     render_sidebar_section(f, area, "Tasks", lines, full_texts, app);
 }
 
@@ -738,11 +889,109 @@ fn task_panel_lines(app: &App, content_width: usize, max_rows: usize) -> Vec<Lin
     lines
 }
 
+fn task_panel_hover_texts(app: &App, max_rows: usize) -> Vec<String> {
+    let mut texts = Vec::with_capacity(max_rows.max(4));
+
+    if let Some(turn_id) = app.runtime_turn_id.as_ref() {
+        let status = app.runtime_turn_status.as_deref().unwrap_or("unknown");
+        texts.push(format!("turn {turn_id} ({status})"));
+    }
+
+    let active_rows = active_tool_rows(app);
+    if !active_rows.is_empty() && texts.len() < max_rows {
+        texts.push("Live tools".to_string());
+        push_tool_row_hover_texts(&mut texts, &active_rows, max_rows);
+    }
+
+    let background_rows = background_task_rows(app, &active_rows);
+    if !background_rows.is_empty() && texts.len() < max_rows {
+        let running = background_rows
+            .iter()
+            .filter(|task| task.status == "running")
+            .count();
+        let done = background_rows.len().saturating_sub(running);
+        let label = if running == 0 {
+            format!("Background commands: {done} completed")
+        } else if done == 0 {
+            format!("Background commands: {running} running")
+        } else {
+            format!("Background commands: {running} running, {done} completed")
+        };
+        texts.push(label);
+
+        let max_items = max_rows.saturating_sub(texts.len());
+        for task in background_rows.iter().take(max_items) {
+            let duration = task
+                .duration_ms
+                .map(format_duration_ms)
+                .unwrap_or_else(|| "-".to_string());
+            let (label, detail) = background_task_labels(task, &duration);
+            texts.push(label);
+            if texts.len() >= max_rows {
+                break;
+            }
+            texts.push(format!("  {detail}"));
+        }
+
+        if texts.len() < max_rows
+            && background_rows
+                .iter()
+                .any(|task| task.id.starts_with("shell_") && task.status == "running")
+        {
+            texts.push("Ctrl+K -> /jobs cancel-all".to_string());
+        }
+    }
+
+    if texts.len() < max_rows {
+        let recent_rows = recent_tool_rows(app, 4);
+        if !recent_rows.is_empty() {
+            texts.push("Recent tools".to_string());
+            push_tool_row_hover_texts(&mut texts, &recent_rows, max_rows);
+        }
+    }
+
+    if texts.len() + 1 < max_rows
+        && app.runtime_turn_id.is_some()
+        && app.sidebar_focus == SidebarFocus::Tasks
+    {
+        texts.push("y -> copy turn id  ·  Y -> copy full status".to_string());
+    }
+
+    if texts.is_empty()
+        || (texts.len() == 1
+            && app.runtime_turn_id.is_some()
+            && active_rows.is_empty()
+            && background_rows.is_empty())
+    {
+        texts.push("No live tools or background jobs".to_string());
+    }
+
+    texts
+}
+
 fn push_sidebar_label_theme(lines: &mut Vec<Line<'static>>, label: &str, theme: &palette::UiTheme) {
     lines.push(Line::from(Span::styled(
         label.to_string(),
         Style::default().fg(theme.accent_primary).bold(),
     )));
+}
+
+fn push_tool_row_hover_texts(texts: &mut Vec<String>, rows: &[SidebarToolRow], max_rows: usize) {
+    for row in rows {
+        if texts.len() >= max_rows {
+            break;
+        }
+        let (marker, _) = tool_status_marker(row.status, &palette::UI_THEME);
+        let label = if let Some(duration_ms) = row.duration_ms {
+            format!("{marker} {} {}", row.name, format_duration_ms(duration_ms))
+        } else {
+            format!("{marker} {}", row.name)
+        };
+        texts.push(label);
+        if !row.summary.trim().is_empty() && texts.len() < max_rows {
+            texts.push(format!("  {}", row.summary));
+        }
+    }
 }
 
 fn background_task_labels(task: &TaskPanelEntry, duration: &str) -> (String, String) {
@@ -1520,8 +1769,9 @@ fn render_sidebar_subagents(f: &mut Frame, area: Rect, app: &mut App) {
         usable_rows.max(1),
         &app.ui_theme,
     );
+    let full_texts = subagent_panel_hover_texts(&summary, &rows, usable_rows.max(1));
 
-    render_sidebar_section(f, area, "Agents", lines, Vec::new(), app);
+    render_sidebar_section(f, area, "Agents", lines, full_texts, app);
 }
 
 /// Minimal projection of the data the sub-agent sidebar needs. Lifted out
@@ -1747,6 +1997,84 @@ pub fn subagent_panel_lines(
     lines
 }
 
+fn subagent_panel_hover_texts(
+    summary: &SidebarSubagentSummary,
+    rows: &[SidebarAgentRow],
+    max_rows: usize,
+) -> Vec<String> {
+    let mut texts = Vec::with_capacity(max_rows.max(4));
+
+    let fanout_total = summary.fanout_total.unwrap_or(0);
+    if summary.cached_total == 0
+        && summary.progress_only_count == 0
+        && fanout_total == 0
+        && !summary.foreground_rlm_running
+    {
+        texts.push("No agents".to_string());
+        return texts;
+    }
+
+    let (live_running, total) = if let Some(total) = summary.fanout_total {
+        (summary.fanout_running, total)
+    } else {
+        (
+            summary.cached_running + summary.progress_only_count,
+            summary.cached_total + summary.progress_only_count,
+        )
+    };
+    let done = total.saturating_sub(live_running);
+    if live_running > 0 {
+        texts.push(format!("{live_running} running / {total}"));
+    } else {
+        texts.push(format!("{done} done"));
+    }
+
+    if !summary.role_counts.is_empty() && texts.len() < max_rows {
+        let mix: Vec<String> = summary
+            .role_counts
+            .iter()
+            .map(|(role, count)| format!("{count} {role}"))
+            .collect();
+        texts.push(mix.join(" · "));
+    }
+
+    for row in rows {
+        if texts.len() >= max_rows {
+            break;
+        }
+        let (marker, _) = agent_status_marker(row.status.as_str(), &palette::UI_THEME);
+        texts.push(format!("{marker} {} {}", row.role, row.name));
+
+        if row.status == "done" {
+            continue;
+        }
+
+        if texts.len() >= max_rows {
+            break;
+        }
+        let mut detail_parts = Vec::new();
+        detail_parts.push(row.id.clone());
+        if row.steps_taken > 0 {
+            detail_parts.push(format!("{} step(s)", row.steps_taken));
+        }
+        if let Some(duration) = row.duration_ms {
+            detail_parts.push(format_duration_ms(duration));
+        }
+        if let Some(progress) = row.progress.as_deref()
+            && !progress.trim().is_empty()
+        {
+            detail_parts.push(summarize_tool_output(progress));
+        }
+        texts.push(format!("  {}", detail_parts.join(" · ")));
+    }
+
+    if summary.foreground_rlm_running && texts.len() < max_rows {
+        texts.push("RLM foreground work active".to_string());
+    }
+
+    texts
+}
+
 fn agent_status_marker(
     status: &str,
     theme: &palette::UiTheme,
@@ -1922,9 +2250,26 @@ fn render_sidebar_section(
         width: area.width.saturating_sub(2 + padding.left + padding.right),
         height: area.height.saturating_sub(2 + padding.top + padding.bottom),
     };
+    let display_texts: Vec<String> = lines
+        .iter()
+        .map(|line| spans_to_text(&line.spans))
+        .collect();
+    let hover_texts: Vec<String> = display_texts
+        .iter()
+        .enumerate()
+        .map(|(idx, display)| {
+            full_texts
+                .get(idx)
+                .filter(|text| !text.trim().is_empty())
+                .cloned()
+                .unwrap_or_else(|| display.clone())
+        })
+        .collect();
+    let rows = sidebar_hover_rows(content_area, &display_texts, &hover_texts);
     app.sidebar_hover.sections.push(SidebarHoverSection {
         content_area,
-        lines: full_texts,
+        lines: hover_texts,
+        rows,
     });
     // Truncate the panel title so it always fits within the section width
     // even after a resize. The title occupies up to 4 chars of border chrome
@@ -1964,15 +2309,42 @@ fn render_sidebar_section(
     f.render_widget(section, area);
 }
 
+fn sidebar_hover_rows(
+    content_area: Rect,
+    display_texts: &[String],
+    hover_texts: &[String],
+) -> Vec<SidebarHoverRow> {
+    display_texts
+        .iter()
+        .zip(hover_texts.iter())
+        .enumerate()
+        .map(|(idx, (display_text, full_text))| {
+            let row_y = content_area.y.saturating_add(idx as u16);
+            let display_width = unicode_width::UnicodeWidthStr::width(display_text.as_str());
+            let full_width = unicode_width::UnicodeWidthStr::width(full_text.as_str());
+            SidebarHoverRow {
+                row_y,
+                display_text: display_text.clone(),
+                full_text: full_text.clone(),
+                detail: None,
+                is_truncated: display_width > content_area.width as usize
+                    || full_width > content_area.width as usize
+                    || display_text != full_text,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ACTIVE_TOOL_COMPLETED_ROW_TTL, ACTIVE_TOOL_STALE_RUNNING_ROW_TTL, AutoSidebarPanel,
-        AutoSidebarState, SidebarAgentRow, SidebarHoverSection, SidebarHoverState,
+        AutoSidebarState, SidebarAgentRow, SidebarHoverRow, SidebarHoverSection, SidebarHoverState,
         SidebarSubagentSummary, SidebarToolRow, SidebarWorkChecklistItem, SidebarWorkStrategyStep,
         SidebarWorkSummary, ToolRowOrder, auto_sidebar_panels, editorial_tool_rows,
-        normalize_activity_text, sidebar_work_summary, subagent_panel_lines, task_panel_lines,
-        work_panel_empty_hint, work_panel_lines,
+        normalize_activity_text, sidebar_hover_rows, sidebar_work_summary,
+        subagent_panel_hover_texts, subagent_panel_lines, task_panel_lines, work_panel_empty_hint,
+        work_panel_hover_texts, work_panel_lines,
     };
     use crate::config::Config;
     use crate::palette;
@@ -2991,6 +3363,7 @@ mod tests {
         let section = SidebarHoverSection {
             content_area: Rect::new(1, 1, 38, 8),
             lines: vec!["line 1".to_string(), "line 2".to_string()],
+            rows: vec![],
         };
         assert_eq!(section.lines.len(), 2);
         assert_eq!(section.lines[0], "line 1");
@@ -3007,6 +3380,7 @@ mod tests {
                 "second".to_string(),
                 "third".to_string(),
             ],
+            rows: vec![],
         };
 
         // Mouse within content area, first line
@@ -3019,5 +3393,89 @@ mod tests {
 
         // Mouse outside content area (above) — row < content_area.y
         assert!((1u16) < section.content_area.y);
+    }
+
+    #[test]
+    fn work_hover_text_preserves_full_checklist_item() {
+        let long_item =
+            "Add ProviderKind::HuggingFace direct route with all auth and docs coverage";
+        let summary = SidebarWorkSummary {
+            checklist_completion_pct: 0,
+            checklist_items: vec![SidebarWorkChecklistItem {
+                id: 7,
+                content: long_item.to_string(),
+                status: TodoStatus::InProgress,
+            }],
+            ..SidebarWorkSummary::default()
+        };
+
+        let display = lines_to_text(&work_panel_lines(
+            &summary,
+            18,
+            4,
+            PaletteMode::Dark,
+            &palette::UI_THEME,
+        ));
+        let hover = work_panel_hover_texts(&summary, 18, 4);
+
+        assert!(
+            display.iter().any(|line| line.contains("...")),
+            "compact Work row should be ellipsized in this fixture: {display:?}"
+        );
+        assert!(
+            hover.iter().any(|line| line.contains(long_item)),
+            "hover text should retain the full checklist item: {hover:?}"
+        );
+    }
+
+    #[test]
+    fn sidebar_hover_rows_mark_source_text_diff_as_truncated() {
+        use ratatui::layout::Rect;
+        let display = vec!["[~] agent imple…".to_string()];
+        let full = vec!["[~] agent implementation-worker-for-sidebar-detail-popover".to_string()];
+        let rows = sidebar_hover_rows(Rect::new(62, 5, 16, 4), &display, &full);
+
+        let expected = SidebarHoverRow {
+            row_y: 5,
+            display_text: display[0].clone(),
+            full_text: full[0].clone(),
+            detail: None,
+            is_truncated: true,
+        };
+        assert_eq!(rows, vec![expected]);
+    }
+
+    #[test]
+    fn subagent_hover_text_preserves_full_agent_id_and_progress() {
+        let mut role_counts = std::collections::BTreeMap::new();
+        role_counts.insert("worker".to_string(), 1);
+        let summary = SidebarSubagentSummary {
+            cached_total: 1,
+            cached_running: 1,
+            role_counts,
+            ..SidebarSubagentSummary::default()
+        };
+        let long_id = "019e9142-83f6-7713-87f1-28902e74bf05";
+        let long_progress =
+            "currently reviewing sidebar hover popover wrapping and hitbox metadata";
+        let rows = vec![SidebarAgentRow {
+            id: long_id.to_string(),
+            name: "sidebar-detail-worker-with-long-name".to_string(),
+            role: "worker".to_string(),
+            status: "running".to_string(),
+            progress: Some(long_progress.to_string()),
+            steps_taken: 9,
+            duration_ms: Some(12_345),
+        }];
+
+        let hover = subagent_panel_hover_texts(&summary, &rows, 5);
+        assert!(
+            hover.iter().any(|line| line.contains(long_id)),
+            "hover text should include the full agent id: {hover:?}"
+        );
+        assert!(
+            hover.iter().any(|line| line.contains(long_progress)),
+            "hover text should include the full progress before popover wrapping: {hover:?}"
+        );
     }
 }

@@ -303,11 +303,9 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
             // Update last mouse position for tooltip rendering.
             app.last_mouse_pos = Some((mouse.column, mouse.row));
 
-            // Check sidebar sections for hover tooltip. Only surface a tooltip
-            // when the hovered line was actually truncated to fit the panel
-            // width — otherwise it just paints a redundant copy of
-            // already-visible text over the neighbouring row, which reads as
-            // visual corruption.
+            // Check sidebar sections for hover popovers. Only surface a
+            // popover when the hovered row lost information in the compact
+            // sidebar view.
             let mut found = false;
             for section in &app.sidebar_hover.sections {
                 if mouse.column >= section.content_area.x
@@ -323,17 +321,35 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
                             .y
                             .saturating_add(section.content_area.height)
                 {
-                    let line_idx = (mouse.row.saturating_sub(section.content_area.y)) as usize;
-                    if let Some(full) = section.lines.get(line_idx) {
-                        let truncated = UnicodeWidthStr::width(full.as_str())
-                            > section.content_area.width as usize;
-                        let desired = truncated.then(|| full.clone());
+                    if let Some(row) = section.rows.iter().find(|row| row.row_y == mouse.row) {
+                        let desired = row.is_truncated.then(|| {
+                            if let Some(detail) = row.detail.as_deref()
+                                && !detail.trim().is_empty()
+                            {
+                                format!("{}\n{detail}", row.full_text)
+                            } else {
+                                row.full_text.clone()
+                            }
+                        });
                         if app.sidebar_hover_tooltip != desired {
                             app.sidebar_hover_tooltip = desired;
                             app.needs_redraw = true;
                         }
                         found = true;
                         break;
+                    } else if section.rows.is_empty() {
+                        let line_idx = (mouse.row.saturating_sub(section.content_area.y)) as usize;
+                        if let Some(full) = section.lines.get(line_idx) {
+                            let truncated =
+                                text_display_width(full) > section.content_area.width as usize;
+                            let desired = truncated.then(|| full.clone());
+                            if app.sidebar_hover_tooltip != desired {
+                                app.sidebar_hover_tooltip = desired;
+                                app.needs_redraw = true;
+                            }
+                            found = true;
+                            break;
+                        }
                     }
                 }
             }

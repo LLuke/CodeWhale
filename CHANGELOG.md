@@ -71,6 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pending-input preview rows now label delivery mode explicitly as steer
   pending, rejected steer, or queued follow-up, with wrapped continuation rows
   aligned under the label so busy-turn input state is easier to read (#2054).
+- Sidebar hover details now use row-level metadata for truncated Work, Tasks,
+  and Agents rows. Mouse hover opens a bordered, wrapping popover with the full
+  underlying row text, long turn/agent ids, and current sub-agent progress
+  instead of repeating the already-ellipsized sidebar label (#2694, #2734).
 - Auto-generated project instructions now reuse the bounded Project Context
   Pack data instead of running an unbounded summary/tree scan when no
   `.codewhale/instructions.md` file exists. The fallback keeps later
@@ -90,7 +94,8 @@ workspace update and completed-thread save APIs (#2640, #2639),
 **@shenjackyuanjie** for the
 HarmonyOS/OpenHarmony port and MatePad Edge validation trail (#2634),
 **@idling11** for the PlanArtifact direction in Plan mode (#2733) and the
-dense tool-call transcript collapse direction (#2738, #2692), and
+dense tool-call transcript collapse/sidebar detail direction (#2738, #2734,
+#2692, #2694), and
 **@h3c-hexin** for the tool-agent model inheritance and configured
 `skills_dir` fixes (#2736, #2737). Thanks also to **@NASLXTO** and
 **@wuxixing** for the large-workspace startup reports (#697, #1827), and to

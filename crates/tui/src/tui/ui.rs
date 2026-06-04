@@ -106,7 +106,9 @@ use crate::tui::tool_routing::exploring_label;
 use crate::tui::tool_routing::{
     handle_tool_call_complete, handle_tool_call_started, maybe_add_patch_preview,
 };
-use crate::tui::ui_text::{history_cell_to_text, line_to_plain, truncate_line_to_width};
+use crate::tui::ui_text::{
+    history_cell_to_text, line_to_plain, text_display_width, truncate_line_to_width,
+};
 use crate::tui::user_input::UserInputView;
 use crate::tui::views::subagent_view_agents;
 use crate::tui::vim_mode;
@@ -3447,6 +3449,10 @@ async fn run_event_loop(
                     app.mention_menu_hidden = true;
                     app.mention_menu_selected = 0;
                 }
+                KeyCode::Esc if app.sidebar_hover_tooltip.is_some() => {
+                    app.sidebar_hover_tooltip = None;
+                    app.needs_redraw = true;
+                }
                 KeyCode::Esc => {
                     match next_escape_action(app, slash_menu_open) {
                         EscapeAction::CloseSlashMenu => {
@@ -6778,34 +6784,55 @@ fn render(f: &mut Frame, app: &mut App) {
                 }
             }
 
-            // Render sidebar hover tooltip if active.
+            // Render sidebar hover popover if active.
             if let Some(ref tooltip_text) = app.sidebar_hover_tooltip
                 && let Some((mouse_col, mouse_row)) = app.last_mouse_pos
             {
-                let text_width = (tooltip_text.len() as u16).clamp(10, 60);
-                let tooltip_height = 1u16;
-                let x = mouse_col
-                    .saturating_add(2)
-                    .min(size.width.saturating_sub(text_width));
-                // Sit one row BELOW the cursor so the tooltip never paints over
-                // the row above the hovered line (which read as corruption).
-                let y = mouse_row
-                    .saturating_add(1)
-                    .min(size.height.saturating_sub(tooltip_height));
-                if text_width > 0 && tooltip_height > 0 {
+                let max_popup_width = 72u16.min(size.width.saturating_sub(4));
+                if max_popup_width >= 10 && size.height >= 3 {
+                    let popup_width = tooltip_text
+                        .lines()
+                        .map(text_display_width)
+                        .max()
+                        .unwrap_or(0)
+                        .saturating_add(2)
+                        .clamp(12, max_popup_width as usize)
+                        as u16;
+                    let inner_width = popup_width.saturating_sub(2).max(1) as usize;
+                    let wrapped_rows = tooltip_text.lines().fold(0u16, |rows, line| {
+                        let width = text_display_width(line);
+                        rows.saturating_add(((width.max(1) - 1) / inner_width + 1) as u16)
+                    });
+                    let popup_content_height = wrapped_rows.clamp(1, 10);
+                    let popup_height = popup_content_height.saturating_add(2);
+                    let x = mouse_col
+                        .saturating_add(2)
+                        .min(size.width.saturating_sub(popup_width));
+                    // Sit one row BELOW the cursor so the tooltip never paints over
+                    // the row above the hovered line (which read as corruption).
+                    let y = mouse_row
+                        .saturating_add(1)
+                        .min(size.height.saturating_sub(popup_height));
                     let tooltip_area = Rect {
                         x,
                         y,
-                        width: text_width,
-                        height: tooltip_height,
+                        width: popup_width,
+                        height: popup_height,
                     };
-                    // Neutral elevated-surface styling so the tooltip reads as a
-                    // tooltip, not a warning highlight (was STATUS_WARNING).
-                    let tooltip = ratatui::widgets::Paragraph::new(tooltip_text.as_str()).style(
-                        Style::default()
-                            .bg(palette::SURFACE_ELEVATED)
-                            .fg(palette::TEXT_PRIMARY),
-                    );
+                    // Neutral elevated-surface styling so the popover reads as a
+                    // detail surface, not a warning highlight.
+                    let tooltip = ratatui::widgets::Paragraph::new(tooltip_text.as_str())
+                        .wrap(ratatui::widgets::Wrap { trim: false })
+                        .block(
+                            Block::default()
+                                .borders(ratatui::widgets::Borders::ALL)
+                                .border_style(Style::default().fg(palette::DEEPSEEK_BLUE))
+                                .style(
+                                    Style::default()
+                                        .bg(palette::SURFACE_ELEVATED)
+                                        .fg(palette::TEXT_PRIMARY),
+                                ),
+                        );
                     f.render_widget(tooltip, tooltip_area);
                 }
             }
