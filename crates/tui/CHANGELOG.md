@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper for future fallback routing. This preserves the requested contract
   without enabling silent runtime provider switches yet (#2574, #2777). Thanks
   @hsdbeebou for the request and @idling11 for the data-model draft.
+- Added `/hf` with `/huggingface` alias for Hugging Face MCP status/setup
+  helpers and `/hf concepts` provider/MCP/Hub guidance. The helper points users
+  to Hugging Face's settings-generated MCP configuration and intentionally does
+  not include Hub search, direct Hugging Face HTTP requests, or upload behavior
+  (#2709, #2782). Thanks @idling11 for the original Hugging Face MCP draft.
 - Added `/sidebar` so users can toggle, show, hide, and optionally persist the
   TUI sidebar from the command line instead of relying on copy-hostile sidebar
   state during long transcript work (#2766, #2788). Thanks @mo-vic for the

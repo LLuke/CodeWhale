@@ -12,6 +12,7 @@ mod core;
 mod debug;
 mod feedback;
 mod goal;
+mod hf;
 mod hooks;
 mod init;
 mod jobs;
@@ -223,6 +224,12 @@ pub const COMMANDS: &[CommandInfo] = &[
         aliases: &[],
         usage: "/feedback [bug|feature|security]",
         description_id: MessageId::CmdFeedbackDescription,
+    },
+    CommandInfo {
+        name: "hf",
+        aliases: &["huggingface"],
+        usage: "/hf [mcp <status|setup>|concepts]",
+        description_id: MessageId::CmdHfDescription,
     },
     CommandInfo {
         name: "home",
@@ -577,6 +584,7 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
         "agent" | "daili" => agent(app, arg),
         "links" | "dashboard" | "api" | "lianjie" => core::deepseek_links(app),
         "feedback" => feedback::feedback(app, arg),
+        "hf" | "huggingface" => hf::hf(app, arg),
         "home" | "stats" | "overview" | "zhuye" | "shouye" => core::home_dashboard(app),
         "workspace" | "cwd" => core::workspace_switch(app, arg),
         "note" => note::note(app, arg),
@@ -1169,6 +1177,13 @@ mod tests {
                 .contains("right sidebar")
         );
         assert!(COMMANDS.iter().any(|cmd| cmd.name == "links"));
+        let hf = COMMANDS
+            .iter()
+            .find(|cmd| cmd.name == "hf")
+            .expect("hf command should exist");
+        assert_eq!(hf.aliases, &["huggingface"]);
+        assert_eq!(hf.description_id, MessageId::CmdHfDescription);
+        assert!(hf.description_for(Locale::En).contains("Hugging Face"));
         assert!(COMMANDS.iter().any(|cmd| cmd.name == "memory"));
         assert!(!COMMANDS.iter().any(|cmd| cmd.name == "set"));
         assert!(!COMMANDS.iter().any(|cmd| cmd.name == "deepseek"));
@@ -1181,6 +1196,17 @@ mod tests {
             .find(|cmd| cmd.name == "links")
             .expect("links command should exist");
         assert_eq!(links.aliases, &["dashboard", "api", "lianjie"]);
+    }
+
+    #[test]
+    fn hf_alias_dispatches_to_concepts_helper() {
+        let mut app = create_test_app();
+        let result = execute("/huggingface concepts", &mut app);
+        assert!(!result.is_error);
+        let message = result.message.expect("concepts message");
+        assert!(message.contains("Hugging Face provider route"));
+        assert!(message.contains("Hugging Face MCP"));
+        assert!(message.contains("Hub workflows"));
     }
 
     #[test]

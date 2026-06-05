@@ -130,6 +130,24 @@ endpoint.
 | `ollama` | `[providers.ollama]` | Optional `OLLAMA_API_KEY` | `OLLAMA_BASE_URL`; default `http://localhost:11434/v1` | `deepseek-coder:1.3b`; provider-hinted custom tags pass through | Self-hosted Ollama OpenAI-compatible route. Localhost deployments commonly omit auth. `OLLAMA_MODEL` is accepted. |
 | `huggingface` | `[providers.huggingface]` | `HUGGINGFACE_API_KEY`, `HF_TOKEN` | `HUGGINGFACE_BASE_URL`; default `https://router.huggingface.co/v1` | `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` | Hugging Face Inference Providers OpenAI-compatible route. Org-prefixed model IDs pass through. |
 
+### Hugging Face Provider vs MCP vs Hub
+
+CodeWhale's `huggingface` provider ID is only the OpenAI-compatible chat
+inference route through Hugging Face Inference Providers. It is selected with
+`/provider huggingface`, `CODEWHALE_PROVIDER=huggingface`, or
+`provider = "huggingface"`.
+
+Hugging Face MCP is a separate external-tool route. Configure it through the
+MCP config described in `docs/MCP.md`, preferably using the settings-generated
+snippet from <https://huggingface.co/settings/mcp>. In the TUI, `/hf mcp status`
+checks whether the Hugging Face MCP server appears in the resolved MCP config,
+`/hf mcp setup` prints the settings workflow and a placeholder-only shape, and
+`/hf concepts` explains the provider/MCP/Hub distinction.
+
+Hub publishing or repository management remains explicit user action through
+Hub-native tooling such as `huggingface_hub` or git. The `/hf` helper does not
+upload to Hugging Face and does not perform direct Hugging Face Hub HTTP search.
+
 ### Xiaomi MiMo Notes
 
 `xiaomi-mimo` defaults to `mimo-v2.5-pro` for long-context reasoning and coding
