@@ -1427,10 +1427,7 @@ async fn list_mcp_tools(
 
     let mut tools = Vec::new();
     for (prefixed_name, tool) in pool.all_tools() {
-        let Some(rest) = prefixed_name.strip_prefix("mcp_") else {
-            continue;
-        };
-        let Some((server, name)) = rest.split_once('_') else {
+        let Ok((server, name)) = pool.parse_prefixed_name(&prefixed_name) else {
             continue;
         };
 

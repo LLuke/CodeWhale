@@ -2261,7 +2261,10 @@ impl McpPool {
     }
 
     /// Parse a prefixed name into (server_name, tool_name)
-    fn parse_prefixed_name<'a>(&self, prefixed_name: &'a str) -> Result<(&'a str, &'a str)> {
+    pub(crate) fn parse_prefixed_name<'a>(
+        &self,
+        prefixed_name: &'a str,
+    ) -> Result<(&'a str, &'a str)> {
         let Some(rest) = prefixed_name.strip_prefix("mcp_") else {
             anyhow::bail!("Invalid MCP tool name: {prefixed_name}");
         };
@@ -3149,6 +3152,27 @@ mod tests {
         assert_eq!(server.command, Some("node".to_string()));
         assert_eq!(server.args, vec!["server.js"]);
         assert_eq!(server.env.get("FOO"), Some(&"bar".to_string()));
+    }
+
+    #[test]
+    fn mcp_pool_parse_prefixed_name_preserves_registered_underscored_server() {
+        let config: McpConfig = serde_json::from_str(
+            r#"{
+                "servers": {
+                    "my": {"command": "node"},
+                    "my_db": {"command": "node"}
+                }
+            }"#,
+        )
+        .unwrap();
+        let pool = McpPool::new(config);
+
+        let (server, tool) = pool
+            .parse_prefixed_name("mcp_my_db_execute_sql")
+            .expect("registered underscored server should parse");
+
+        assert_eq!(server, "my_db");
+        assert_eq!(tool, "execute_sql");
     }
 
     #[test]

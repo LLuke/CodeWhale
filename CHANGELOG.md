@@ -83,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still fetch installed model IDs through `/models` instead of relying on a
   stale static default (#2742). Thanks @reidliu41 for the focused report and
   draft fix.
+- MCP runtime API tool listings and approval summaries no longer split
+  underscored MCP server names at the first `_`. Tool-call routing already used
+  the longest registered server name; the list endpoint now reuses that parser,
+  and approval cards show the full MCP target route instead of a guessed server
+  segment (#2744). Thanks @lioryx, @cyq1017, and @puneetdixit200 for the report
+  and matching fixes.
 - Documented the agent and sub-agent stewardship ethos so future automation
   preserves human issue intake, careful PR review, and contributor credit.
 - Moved the TUI Starlark execpolicy parser and PTY support behind non-OHOS

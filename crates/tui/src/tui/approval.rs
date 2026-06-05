@@ -344,13 +344,12 @@ fn param_preview(params: &Value, keys: &[&str], max_len: usize) -> Option<String
     None
 }
 
-fn mcp_server_hint(tool_name: &str) -> Option<String> {
+fn mcp_target_hint(tool_name: &str) -> Option<String> {
     let remainder = tool_name.strip_prefix("mcp_")?;
-    let (server, _) = remainder.split_once('_')?;
-    if server.is_empty() {
+    if remainder.is_empty() {
         None
     } else {
-        Some(server.to_string())
+        Some(remainder.to_string())
     }
 }
 
@@ -393,16 +392,16 @@ fn build_impact_summary(tool_name: &str, category: ToolCategory, params: &Value)
         ToolCategory::McpRead => {
             let mut impacts =
                 vec!["Reads from an MCP server without an obvious local write.".to_string()];
-            if let Some(server) = mcp_server_hint(tool_name) {
-                impacts.push(format!("Server: {server}"));
+            if let Some(target) = mcp_target_hint(tool_name) {
+                impacts.push(format!("MCP target: {target}"));
             }
             impacts
         }
         ToolCategory::McpAction => {
             let mut impacts =
                 vec!["Calls an MCP server action that may have side effects.".to_string()];
-            if let Some(server) = mcp_server_hint(tool_name) {
-                impacts.push(format!("Server: {server}"));
+            if let Some(target) = mcp_target_hint(tool_name) {
+                impacts.push(format!("MCP target: {target}"));
             }
             impacts
         }
@@ -475,15 +474,15 @@ fn build_impact_summary_zh_hans(
         }
         ToolCategory::McpRead => {
             let mut impacts = vec!["从 MCP 服务器读取信息，不应产生本地写入。".to_string()];
-            if let Some(server) = mcp_server_hint(tool_name) {
-                impacts.push(format!("服务器：{server}"));
+            if let Some(target) = mcp_target_hint(tool_name) {
+                impacts.push(format!("MCP 目标：{target}"));
             }
             impacts
         }
         ToolCategory::McpAction => {
             let mut impacts = vec!["调用可能产生副作用的 MCP 服务器操作。".to_string()];
-            if let Some(server) = mcp_server_hint(tool_name) {
-                impacts.push(format!("服务器：{server}"));
+            if let Some(target) = mcp_target_hint(tool_name) {
+                impacts.push(format!("MCP 目标：{target}"));
             }
             impacts
         }
@@ -1445,6 +1444,33 @@ mod tests {
                 .iter()
                 .any(|line| line.contains("cargo test"))
         );
+    }
+
+    #[test]
+    fn mcp_impact_summary_preserves_full_target_for_underscored_names() {
+        let request = ApprovalRequest::new(
+            "test-id",
+            "mcp_my_db_execute_sql",
+            "Call an MCP tool",
+            &json!({}),
+            "tool:mcp_my_db_execute_sql",
+        );
+
+        assert!(
+            request
+                .impacts
+                .iter()
+                .any(|line| line == "MCP target: my_db_execute_sql")
+        );
+        assert!(!request.impacts.iter().any(|line| line == "Server: my"));
+
+        let zh_impacts = request.impacts_for_locale(Locale::ZhHans);
+        assert!(
+            zh_impacts
+                .iter()
+                .any(|line| line == "MCP 目标：my_db_execute_sql")
+        );
+        assert!(!zh_impacts.iter().any(|line| line == "服务器：my"));
     }
 
     #[test]
