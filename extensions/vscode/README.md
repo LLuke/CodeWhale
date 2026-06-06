@@ -1,0 +1,29 @@
+# CodeWhale for VS Code
+
+Official CodeWhale extension scaffold for local development.
+
+This first slice is intentionally small:
+
+- open CodeWhale in an integrated terminal
+- start `codewhale serve --http` in a visible terminal
+- check a local runtime through `/health` and `/v1/runtime/info`
+- show connection state in the status bar and CodeWhale activity view
+
+It does not expose the full chat webview, VS Code Agent View integration,
+inline edit application, marketplace publish workflow, or retry/undo/snapshot
+GUI endpoints yet.
+
+## Local Use
+
+```bash
+npm install
+npm run compile
+npm run package
+code --install-extension codewhale-vscode-0.8.53.vsix
+```
+
+Configure `codewhale.commandPath`, `codewhale.runtimeHost`,
+`codewhale.runtimePort`, and `codewhale.runtimeToken` from VS Code settings.
+
+Keep the runtime on `127.0.0.1` unless you deliberately front it with trusted
+local networking controls.
