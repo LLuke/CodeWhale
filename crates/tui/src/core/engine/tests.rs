@@ -2378,7 +2378,10 @@ fn turn_metadata_mode_updates_with_change_mode_op() {
 }
 
 #[test]
-fn mode_change_op_updates_current_mode_and_emits_session_updated() {
+fn current_mode_field_assignment_takes_effect_synchronously() {
+    // Basic unit-level invariant: the current_mode field mutates as expected.
+    // Op::ChangeMode dispatch is exercised by the integration test
+    // change_mode_op_updates_current_mode_and_emits_status.
     let tmp = tempdir().expect("tempdir");
     let config = EngineConfig {
         workspace: tmp.path().to_path_buf(),
@@ -2388,9 +2391,6 @@ fn mode_change_op_updates_current_mode_and_emits_session_updated() {
     let (mut engine, _handle) = Engine::new(config, &Config::default());
     assert_eq!(engine.current_mode, AppMode::Agent);
 
-    // Op::ChangeMode updates current_mode synchronously.
-    // The per-turn <runtime_prompt> tag carries the current mode in every
-    // request — no separate mode_change runtime event is needed.
     engine.current_mode = AppMode::Yolo;
     assert_eq!(engine.current_mode, AppMode::Yolo);
 }
