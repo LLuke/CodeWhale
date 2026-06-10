@@ -47,9 +47,7 @@ pub fn change(app: &mut App, version: Option<&str>) -> CommandResult {
                      Expected a line starting with `## [`."
                         .to_string()
                 } else {
-                    format!(
-                        "Could not find version \"{ver}\" in the bundled CodeWhale changelog."
-                    )
+                    format!("Could not find version \"{ver}\" in the bundled CodeWhale changelog.")
                 }
             } else {
                 "Could not find a version section in the bundled CodeWhale changelog. \

@@ -43,7 +43,7 @@ old_re = re.escape(old)
 def bump(path, pattern, repl, minimum):
     p = pathlib.Path(path)
     text = p.read_text()
-    out, n = re.subn(pattern, repl, text)
+    out, n = re.subn(pattern, repl, text, flags=re.MULTILINE)
     if n < minimum:
         sys.exit(f"error: expected >= {minimum} replacement(s) in {path}, made {n}")
     p.write_text(out)

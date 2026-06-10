@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.57] - 2026-06-10
+
+### Added
+
+- **Turns now survive system sleep.** When the host suspends mid-stream, the
+  connection used to die on wake with `Stream read error: error decoding
+  response body` and the turn was lost (#2990). The engine now stamps stream
+  progress with both monotonic and wall-clock time; a large divergence on a
+  stream error identifies a sleep/wake cycle, and the request is silently
+  re-issued (up to the existing 3-retry budget) instead of failing the turn.
+- **One-command release prep.** `./scripts/release/prepare-release.sh X.Y.Z`
+  bumps the workspace version, every internal crate dependency pin, the npm
+  wrapper, and the README install-tag examples, refreshes `Cargo.lock`,
+  regenerates the embedded TUI changelog slice and web facts, and runs
+  `check-versions.sh` — the v0.8.56 release needed nine follow-up commits for
+  exactly these sync points.
+- `.github/CODEOWNERS` and `.github/dependabot.yml` (weekly cargo +
+  github-actions updates, monthly npm for `web/`).
+
+### Changed
+
+- **The changelog went on a diet.** Root `CHANGELOG.md` now carries recent
+  releases (v0.8.40+); older entries moved to `docs/CHANGELOG_ARCHIVE.md`.
+  `crates/tui/CHANGELOG.md` — embedded into every binary for `/change` — is a
+  generated 15-release slice (`scripts/sync-changelog.sh`), no longer a
+  357 KB manual byte-for-byte copy (~300 KB smaller binaries).
+- GitHub Release bodies are generated from the tagged version's changelog
+  section (`scripts/release/generate-release-body.sh`) instead of a
+  hardcoded workflow blob with a hand-pasted contributor list.
+- `check-versions.sh` now also gates `web/lib/facts.generated.ts` and the
+  README install-tag examples; the CNB mirror pipeline validates the pushed
+  tag against `Cargo.toml` before generating release notes.
+- Docs reorganized: internal design notes moved under `docs/rfcs/`; stale
+  internal docs (old audits, handoffs, region-specific VM notes) removed.
+- Agent-facing polish: the system prompt environment block reports
+  `codewhale_version` (was `deepseek_version`), the legacy
+  `.deepseek/instructions.md` path is no longer advertised in the prompt
+  (still honored for back-compat), and oversized instruction files are
+  truncated with an explicit `[…truncated: N bytes omitted]` marker instead
+  of a bare ellipsis.
+
+### Fixed
+
+- **Docker images build again.** The release `docker` job failed for v0.8.56
+  because the Dockerfile still copied the pre-rebrand `deepseek` /
+  `deepseek-tui` binaries; they are now symlinks to the codewhale binaries
+  inside the image, so legacy container entrypoints keep working.
+- `.devcontainer/devcontainer.json` used the pre-rebrand container name,
+  mount path, and `deepseek` remote user.
+- Stale `--bin deepseek` examples, `DeepSeek-TUI` strings in `/change`
+  output, and pre-rebrand doc comments.
+
+### Removed
+
+- Unused dependencies: `tracing-appender` and `zeroize` (TUI crate),
+  `rustls` (release crate); the orphaned `vendor/schemaui-0.12.0` lockfile
+  leftover and a machine-specific one-off `scripts/verify_task.sh`.
+
 ## [0.8.56] - 2026-06-09
 
 ### Added
@@ -1578,7 +1636,8 @@ overflow report and `/theme` picker edge-wrapping patch in #1814.
 
 Older releases (v0.8.39 and earlier) are archived in [docs/CHANGELOG_ARCHIVE.md](docs/CHANGELOG_ARCHIVE.md).
 
-[Unreleased]: https://github.com/Hmbown/CodeWhale/compare/v0.8.55...HEAD
+[Unreleased]: https://github.com/Hmbown/CodeWhale/compare/v0.8.57...HEAD
+[0.8.57]: https://github.com/Hmbown/CodeWhale/compare/v0.8.56...v0.8.57
 [0.8.56]: https://github.com/Hmbown/CodeWhale/compare/v0.8.55...v0.8.56
 [0.8.55]: https://github.com/Hmbown/CodeWhale/compare/v0.8.54...v0.8.55
 [0.8.54]: https://github.com/Hmbown/CodeWhale/compare/v0.8.53...v0.8.54

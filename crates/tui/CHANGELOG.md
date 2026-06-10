@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.57] - 2026-06-10
+
+### Added
+
+- **Turns now survive system sleep.** When the host suspends mid-stream, the
+  connection used to die on wake with `Stream read error: error decoding
+  response body` and the turn was lost (#2990). The engine now stamps stream
+  progress with both monotonic and wall-clock time; a large divergence on a
+  stream error identifies a sleep/wake cycle, and the request is silently
+  re-issued (up to the existing 3-retry budget) instead of failing the turn.
+- **One-command release prep.** `./scripts/release/prepare-release.sh X.Y.Z`
+  bumps the workspace version, every internal crate dependency pin, the npm
+  wrapper, and the README install-tag examples, refreshes `Cargo.lock`,
+  regenerates the embedded TUI changelog slice and web facts, and runs
+  `check-versions.sh` — the v0.8.56 release needed nine follow-up commits for
+  exactly these sync points.
+- `.github/CODEOWNERS` and `.github/dependabot.yml` (weekly cargo +
+  github-actions updates, monthly npm for `web/`).
+
+### Changed
+
+- **The changelog went on a diet.** Root `CHANGELOG.md` now carries recent
+  releases (v0.8.40+); older entries moved to `docs/CHANGELOG_ARCHIVE.md`.
+  `crates/tui/CHANGELOG.md` — embedded into every binary for `/change` — is a
+  generated 15-release slice (`scripts/sync-changelog.sh`), no longer a
+  357 KB manual byte-for-byte copy (~300 KB smaller binaries).
+- GitHub Release bodies are generated from the tagged version's changelog
+  section (`scripts/release/generate-release-body.sh`) instead of a
+  hardcoded workflow blob with a hand-pasted contributor list.
+- `check-versions.sh` now also gates `web/lib/facts.generated.ts` and the
+  README install-tag examples; the CNB mirror pipeline validates the pushed
+  tag against `Cargo.toml` before generating release notes.
+- Docs reorganized: internal design notes moved under `docs/rfcs/`; stale
+  internal docs (old audits, handoffs, region-specific VM notes) removed.
+- Agent-facing polish: the system prompt environment block reports
+  `codewhale_version` (was `deepseek_version`), the legacy
+  `.deepseek/instructions.md` path is no longer advertised in the prompt
+  (still honored for back-compat), and oversized instruction files are
+  truncated with an explicit `[…truncated: N bytes omitted]` marker instead
+  of a bare ellipsis.
+
+### Fixed
+
+- **Docker images build again.** The release `docker` job failed for v0.8.56
+  because the Dockerfile still copied the pre-rebrand `deepseek` /
+  `deepseek-tui` binaries; they are now symlinks to the codewhale binaries
+  inside the image, so legacy container entrypoints keep working.
+- `.devcontainer/devcontainer.json` used the pre-rebrand container name,
+  mount path, and `deepseek` remote user.
+- Stale `--bin deepseek` examples, `DeepSeek-TUI` strings in `/change`
+  output, and pre-rebrand doc comments.
+
+### Removed
+
+- Unused dependencies: `tracing-appender` and `zeroize` (TUI crate),
+  `rustls` (release crate); the orphaned `vendor/schemaui-0.12.0` lockfile
+  leftover and a machine-specific one-off `scripts/verify_task.sh`.
+
 ## [0.8.56] - 2026-06-09
 
 ### Added
@@ -1202,82 +1260,6 @@ and continuing contributors **@reidliu41**, **@cyq1017**, **@idling11**,
 - **Work sidebar now refreshes immediately** after `checklist_write`,
   `checklist_update`, and `update_plan` tool calls, matching the existing
   `todo_write` behavior instead of relying on the 2.5s periodic poll (#1787).
-
-## [0.8.43] - 2026-05-24
-
-### Fixed
-
-- **`grep_files` now respects the cancellation token.** Long-running file
-  searches cancel promptly instead of running to completion after the user
-  aborts (#1839). Thanks @LING71671.
-- **npm installer stream-pause race condition fixed.** The install script now
-  pauses HTTP response streams immediately, preventing early data loss that
-  caused "Invalid checksum manifest line" errors (#1860). Thanks @jeoor.
-- **Ctrl+Z restores the last cleared composer draft.** Pressing Ctrl+Z in an
-  empty composer recovers the text that was last cleared with Ctrl+U or
-  Ctrl+S, matching the muscle memory users expect from other editors (#1911).
-  Thanks @LING71671.
-- **Clipboard works on non-wlroots Wayland compositors.** The Linux clipboard
-  path now tries `wl-copy` before `arboard`, fixing silent copy failures on
-  niri, River, cosmic-comp, and GNOME mutter (#1938). Thanks @ousamabenyounes.
-
-### Added
-
-- **`/goal` remains the persistent objective surface.** Use `/goal <objective>`
-  to set a goal and `/goal done` to mark it complete. Goal status appears in
-  the Work sidebar with elapsed time, but it does not change Plan / Agent /
-  YOLO mode or approval behavior. A tabbed Ralph-style Goal loop is deferred to
-  v0.8.44 (#2007).
-- **Post-turn receipts cite evidence for every completed turn.** When a turn
-  finishes, a receipt line shows in the transcript tail with a summary of
-  tool calls, file changes, and evidence that supports the agent's claims.
-  Tool evidence is collected per-turn and flushed on new dispatch.
-- **Stall reason classification.** When a turn has been running for more than
-  30 seconds, the footer now appends a classified reason: "waiting for model",
-  "tools executing", "sub-agents working", "compacting context", or "waiting —
-  no recent activity".
-- **Decision card widget for structured user input.** When Brother Whale needs
-  a choice, it surfaces a bordered card with numbered options, keyboard
-  navigation (1-9 / j/k / arrows), and Enter/Esc to confirm or cancel.
-- **Tasks sidebar now shows fuller turn IDs and supports copy-to-clipboard.**
-  Turn ID prefixes are widened from 12 to 16 characters for disambiguation,
-  background job status is presented as "X running, Y completed" instead of
-  ambiguous "X active (Y running)", and `y` / `Y` yank affordances copy the
-  current turn ID or full status line to the system clipboard (#1975).
-
-### Changed
-
-- **Contributor count and acknowledgement surfaces refreshed.** The website
-  fallback contributor count now reflects 98 live GitHub contributors (up from
-  the stale 91). All three README translations (English, 中文, 日本語) now
-  include 30+ previously unlisted contributors whose PRs were merged since
-  April 2026.
-- **README and web surface rebrand refinements.** Crate descriptions, npm
-  package text, and website copy now consistently position CodeWhale as
-  open-model-first and provider-spanning, with DeepSeek V4 as the first-class
-  path.
-- **New contributor names added to README acknowledgements.** Thanks to
-  @Apeiron0w0, @aqilaziz, @ChaceLyee2101, @ComeFromTheMars, @CrepuscularIRIS,
-  @dst1213, @eltociear, @fuleinist, @greyfreedom, @h3c-hexin, @heloanc,
-  @hxy91819, @J3y0r, @JiarenWang, @jinpengxuan, @KhalidAlnujaidi, @laoye2020,
-  @lbcheng888, @linzhiqin2003, @Liu-Vince, @lixiasky-back, @pengyou200902,
-  @punkcanyang, @Rene-Kuhm, @SamhandsomeLee, @sockerch, @sternelee,
-  @Wenjunyun123, @whtis, and @wuwuzhijing for the translations, typo fixes,
-  docs polish, and small UX improvements that landed across the 0.8.42 →
-  0.8.43 cycle.
-
-### Security
-
-- **Thinking blocks can be collapsed/expanded via keyboard.** Space on an
-  empty composer toggles the focused thinking cell between collapsed and
-  expanded, complementing the existing mouse right-click context menu (#1972).
-- **Sub-agent completion events no longer delayed to the next turn.** The turn
-  loop now drains late-arriving sub-agent completions at the final checkpoint
-  before breaking, so child-agent sentinels surface immediately instead of
-  appearing in the following turn (#1961).
-- **`codewhale doctor` now referenced correctly in SSE timeout errors.**
-  The error message shown when SSE streams fail to connect now points users to
-  `codewhale doctor` (not the legacy `deepseek doctor`).
 
 ---
 

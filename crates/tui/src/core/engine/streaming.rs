@@ -82,10 +82,7 @@ pub(super) const SLEEP_GAP_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// True when the gap between wall-clock and monotonic elapsed time since the
 /// last stream progress says the host was suspended.
-pub(super) fn sleep_gap_detected(
-    monotonic_elapsed: Duration,
-    wallclock_elapsed: Duration,
-) -> bool {
+pub(super) fn sleep_gap_detected(monotonic_elapsed: Duration, wallclock_elapsed: Duration) -> bool {
     wallclock_elapsed.saturating_sub(monotonic_elapsed) > SLEEP_GAP_THRESHOLD
 }
 
