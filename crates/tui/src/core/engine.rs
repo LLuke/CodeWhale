@@ -325,6 +325,9 @@ pub struct EngineConfig {
     /// Tool restriction from custom slash command frontmatter.
     /// `None` means the current turn may use the normal tool set.
     pub allowed_tools: Option<Vec<String>>,
+    /// Tool deny-list.  Deny always wins over allow (#3027).
+    /// `None` means no tools are explicitly denied.
+    pub disallowed_tools: Option<Vec<String>>,
     /// Hook executor for control-plane hooks.
     /// `ToolCallBefore` hooks may deny a tool call with exit code 2.
     pub hook_executor: Option<std::sync::Arc<crate::hooks::HookExecutor>>,
@@ -409,6 +412,7 @@ impl Default for EngineConfig {
             strict_tool_mode: false,
             goal_objective: None,
             allowed_tools: None,
+            disallowed_tools: None,
             hook_executor: None,
             locale_tag: "en".to_string(),
             workshop: None,

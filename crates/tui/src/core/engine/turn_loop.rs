@@ -2378,6 +2378,15 @@ fn command_allows_tool(allowed_tools: Option<&[String]>, tool_name: &str) -> boo
     allowed_tools.contains(&tool_name.to_ascii_lowercase())
 }
 
+/// Check whether `tool_name` is explicitly denied (#3027).
+/// Deny always wins over allow.
+fn command_denies_tool(disallowed_tools: Option<&[String]>, tool_name: &str) -> bool {
+    let Some(disallowed_tools) = disallowed_tools else {
+        return false;
+    };
+    disallowed_tools.contains(&tool_name.to_ascii_lowercase())
+}
+
 fn resolve_tool_definition<'a>(
     tool_name: &mut String,
     tool_catalog: &'a [Tool],

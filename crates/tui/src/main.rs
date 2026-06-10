@@ -336,6 +336,19 @@ struct ExecArgs {
     /// Output format for exec mode
     #[arg(long, value_enum, default_value_t = ExecOutputFormat::Text)]
     output_format: ExecOutputFormat,
+    /// Comma-separated list of tools to allow (all others denied).
+    /// Lowercase catalog names: read_file, write_file, exec_shell, grep_files, etc.
+    #[arg(long, value_delimiter = ',')]
+    allowed_tools: Option<Vec<String>>,
+    /// Comma-separated list of tools to deny (deny wins over allow).
+    #[arg(long, value_delimiter = ',')]
+    disallowed_tools: Option<Vec<String>>,
+    /// Maximum number of model steps (tool calls) before the run ends.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    max_turns: Option<u32>,
+    /// Extra text appended to the system prompt for this run.
+    #[arg(long)]
+    append_system_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -975,13 +988,23 @@ async fn main() -> Result<()> {
                 let needs_engine = args.auto
                     || yolo
                     || resume_session_id.is_some()
-                    || args.output_format == ExecOutputFormat::StreamJson;
+                    || args.output_format == ExecOutputFormat::StreamJson
+                    || args.max_turns.is_some()
+                    || args.allowed_tools.is_some()
+                    || args.disallowed_tools.is_some();
                 if needs_engine {
                     let max_subagents = cli.max_subagents.map_or_else(
                         || config.max_subagents(),
                         |value| value.clamp(1, MAX_SUBAGENTS),
                     );
                     let auto_mode = args.auto || yolo;
+                    let max_turns = args.max_turns.unwrap_or(100);
+                    let allowed_tools = args.allowed_tools.as_ref().map(|v| {
+                        v.iter().map(|s| s.to_ascii_lowercase().trim().to_string()).collect::<Vec<_>>()
+                    });
+                    let disallowed_tools = args.disallowed_tools.as_ref().map(|v| {
+                        v.iter().map(|s| s.to_ascii_lowercase().trim().to_string()).collect::<Vec<_>>()
+                    });
                     run_exec_agent(
                         &config,
                         &model,
@@ -993,6 +1016,10 @@ async fn main() -> Result<()> {
                         args.json,
                         resume_session_id,
                         args.output_format,
+                        max_turns,
+                        allowed_tools,
+                        disallowed_tools,
+                        args.append_system_prompt.clone(),
                     )
                     .await
                 } else if args.json {
@@ -1249,6 +1276,10 @@ async fn run_swebench_command(
                 false,
                 None,
                 args.output_format,
+                100,
+                None,
+                None,
+                None,
             )
             .await?;
 
@@ -5748,6 +5779,10 @@ async fn run_exec_agent(
     json_output: bool,
     resume_session_id: Option<String>,
     output_format: ExecOutputFormat,
+    max_turns: u32,
+    allowed_tools: Option<Vec<String>>,
+    disallowed_tools: Option<Vec<String>>,
+    append_system_prompt: Option<String>,
 ) -> Result<()> {
     use crate::compaction::CompactionConfig;
     use crate::core::engine::{EngineConfig, spawn_engine};
@@ -5799,15 +5834,24 @@ async fn run_exec_agent(
         notes_path: config.notes_path(),
         mcp_config_path: config.mcp_config_path(),
         skills_dir: config.skills_dir(),
-        instructions: config
-            .instructions_paths()
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+        instructions: {
+            let mut instrs: Vec<crate::prompts::InstructionSource> = config
+                .instructions_paths()
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            if let Some(ref extra) = append_system_prompt {
+                instrs.push(crate::prompts::InstructionSource::Inline {
+                    name: "cli:append-system-prompt".into(),
+                    content: extra.clone(),
+                });
+            }
+            instrs
+        },
         project_context_pack_enabled: config.project_context_pack_enabled(),
         translation_enabled: false,
         show_thinking: settings.show_thinking,
-        max_steps: 100,
+        max_steps: max_turns,
         max_subagents,
         features: config.features(),
         compaction,
@@ -5837,7 +5881,8 @@ async fn run_exec_agent(
         vision_config: config.vision_model_config(),
         strict_tool_mode: config.strict_tool_mode.unwrap_or(false),
         goal_objective: None,
-        allowed_tools: None,
+        allowed_tools: allowed_tools.clone(),
+        disallowed_tools: disallowed_tools.clone(),
         hook_executor: None,
         locale_tag: crate::localization::resolve_locale(&settings.locale)
             .tag()
@@ -5895,7 +5940,7 @@ async fn run_exec_agent(
             mode,
             model: effective_model.clone(),
             goal_objective: None,
-            allowed_tools: None,
+            allowed_tools: allowed_tools.clone(),
             hook_executor: None,
             reasoning_effort: effective_reasoning_effort,
             reasoning_effort_auto: auto_model,
