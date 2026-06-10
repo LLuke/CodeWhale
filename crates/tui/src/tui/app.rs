@@ -1445,6 +1445,9 @@ pub struct App {
     pub pending_subagent_dispatch: Option<String>,
     /// Animation anchor for status-strip active sub-agent spinner.
     pub agent_activity_started_at: Option<Instant>,
+    /// Last time a sub-agent progress event triggered a redraw.
+    /// Used to throttle redraws under high sub-agent concurrency (#3033).
+    pub last_agent_progress_redraw: Option<Instant>,
     pub ui_theme: UiTheme,
     /// Active named theme. Drives the cell-level color remap in
     /// `tui::color_compat::ColorCompatBackend` so community presets
@@ -2174,6 +2177,7 @@ impl App {
             last_fanout_card_index: None,
             pending_subagent_dispatch: None,
             agent_activity_started_at: None,
+            last_agent_progress_redraw: None,
             ui_theme,
             theme_id,
             onboarding,

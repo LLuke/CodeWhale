@@ -2318,6 +2318,24 @@ async fn run_event_loop(
                             app.agent_activity_started_at = Some(Instant::now());
                         }
                         app.status_message = Some(format!("Sub-agent {id}: {display}"));
+                        // #3033: Throttle redraws from rapid AgentProgress events.
+                        // When 4+ sub-agents are running concurrently, each firing
+                        // progress events, the per-event `needs_redraw = true` saturates
+                        // the render loop and starves terminal input.  Limit
+                        // progress-driven repaints to at most one per 100ms; the
+                        // status-animation timer (80ms cadence) provides a guaranteed
+                        // floor for sidebar updates.  Data is still recorded immediately;
+                        // the sidebar picks it up on the next permitted redraw.
+                        let now = Instant::now();
+                        if let Some(last) = app.last_agent_progress_redraw {
+                            if now.duration_since(last) < Duration::from_millis(100) {
+                                received_engine_event = false;
+                            } else {
+                                app.last_agent_progress_redraw = Some(now);
+                            }
+                        } else {
+                            app.last_agent_progress_redraw = Some(now);
+                        }
                     }
                     EngineEvent::AgentComplete { id, result } => {
                         execute_subagent_observer_hook(
