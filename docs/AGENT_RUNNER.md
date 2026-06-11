@@ -61,10 +61,12 @@ tmux new-session -d -s "issue-<N>" \
    codewhale exec --auto --output-format stream-json \"\$(cat)\" 2>&1 | tee /tmp/issue-<N>.log"
 ```
 
-For resuming an interrupted run:
+For resuming an interrupted run (`--continue` picks up the most recent
+session for this workspace; `--resume latest` only exists in the interactive
+TUI):
 
 ```bash
-codewhale exec --auto --output-format stream-json --resume latest "..."
+codewhale exec --auto --output-format stream-json --continue "..."
 ```
 
 ### 5. Verify
