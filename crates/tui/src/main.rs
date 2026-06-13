@@ -243,6 +243,8 @@ enum Commands {
     Exec(ExecArgs),
     /// Generate SWE-bench prediction rows from CodeWhale runs
     Swebench(SwebenchArgs),
+    /// Manage local Agent Fleet runs and workers
+    Fleet(FleetArgs),
     /// Run a code review over a git diff
     Review(ReviewArgs),
     /// Open the TUI pre-seeded with a GitHub PR's title, body, and diff (#451)
@@ -371,6 +373,59 @@ enum SwebenchCommand {
     Run(SwebenchRunArgs),
     /// Export the current working-tree diff as one SWE-bench prediction row
     Export(SwebenchExportArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+struct FleetArgs {
+    #[command(subcommand)]
+    command: FleetCommand,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum FleetCommand {
+    /// Initialize the local fleet ledger for this workspace
+    Init,
+    /// Create a run from a task spec and start the foreground manager loop
+    Run(FleetRunArgs),
+    /// Show queued/running/completed/failed/stale fleet counts
+    Status,
+    /// Inspect one worker's status, heartbeat, latest event, and artifacts
+    Inspect {
+        /// Worker id printed by `codewhale fleet run`
+        worker_id: String,
+    },
+    /// Interrupt a running worker task and record a terminal cancellation
+    Interrupt {
+        /// Worker id printed by `codewhale fleet run`
+        worker_id: String,
+    },
+    /// Restart the latest task for a worker
+    Restart {
+        /// Worker id printed by `codewhale fleet run`
+        worker_id: String,
+    },
+    /// Stop all queued and running fleet work
+    Stop {
+        /// Confirm stopping all queued and running fleet tasks
+        #[arg(long, required = true)]
+        all: bool,
+    },
+}
+
+#[derive(Args, Debug, Clone)]
+struct FleetRunArgs {
+    /// JSON or TOML task spec to enqueue
+    #[arg(value_name = "TASK_SPEC")]
+    task_spec: PathBuf,
+    /// Maximum local workers to lease concurrently
+    #[arg(long, default_value_t = 4)]
+    max_workers: usize,
+    /// Seconds without heartbeat before a running task is counted stale
+    #[arg(long, default_value_t = 300)]
+    stale_after_seconds: u64,
+    /// Schedule once and return instead of staying in the manager loop
+    #[arg(long, hide = true, default_value_t = false)]
+    once: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -1068,6 +1123,10 @@ async fn main() -> Result<()> {
                 );
                 run_swebench_command(&config, &model, workspace, max_subagents, args).await
             }
+            Commands::Fleet(args) => {
+                let workspace = resolve_workspace(&cli);
+                run_fleet_command(&workspace, args).await
+            }
             Commands::Review(args) => {
                 let config = load_config_from_cli(&cli)?;
                 run_review(&config, args).await
@@ -1326,6 +1385,207 @@ async fn run_swebench_command(
                 &args.instance_id,
                 &model_name,
             )
+        }
+    }
+}
+
+async fn run_fleet_command(workspace: &Path, args: FleetArgs) -> Result<()> {
+    use crate::fleet::manager::{FleetManager, FleetStatusSnapshot, FleetWorkerInspection};
+    use codewhale_protocol::fleet::{
+        FleetArtifactKind, FleetWorkerEventPayload, FleetWorkerStatus,
+    };
+
+    fn worker_status_label(status: &FleetWorkerStatus) -> &'static str {
+        match status {
+            FleetWorkerStatus::Unknown => "unknown",
+            FleetWorkerStatus::Online => "online",
+            FleetWorkerStatus::Busy => "busy",
+            FleetWorkerStatus::Offline => "offline",
+            FleetWorkerStatus::Unhealthy => "unhealthy",
+            FleetWorkerStatus::Draining => "draining",
+            FleetWorkerStatus::Retired => "retired",
+        }
+    }
+
+    fn artifact_kind_label(kind: &FleetArtifactKind) -> String {
+        match kind {
+            FleetArtifactKind::Log => "log".to_string(),
+            FleetArtifactKind::Patch => "patch".to_string(),
+            FleetArtifactKind::TestResult => "test_result".to_string(),
+            FleetArtifactKind::Report => "report".to_string(),
+            FleetArtifactKind::Checkpoint => "checkpoint".to_string(),
+            FleetArtifactKind::Receipt => "receipt".to_string(),
+            FleetArtifactKind::Other(value) => value.clone(),
+        }
+    }
+
+    fn event_label(payload: &FleetWorkerEventPayload) -> String {
+        match payload {
+            FleetWorkerEventPayload::Queued => "queued".to_string(),
+            FleetWorkerEventPayload::Leased { .. } => "leased".to_string(),
+            FleetWorkerEventPayload::Starting => "starting".to_string(),
+            FleetWorkerEventPayload::Running => "running".to_string(),
+            FleetWorkerEventPayload::ModelWait { model } => model
+                .as_ref()
+                .map(|model| format!("model_wait model={model}"))
+                .unwrap_or_else(|| "model_wait".to_string()),
+            FleetWorkerEventPayload::RunningTool { tool, call_id } => call_id
+                .as_ref()
+                .map(|call_id| format!("running_tool tool={tool} call_id={call_id}"))
+                .unwrap_or_else(|| format!("running_tool tool={tool}")),
+            FleetWorkerEventPayload::Heartbeat { .. } => "heartbeat".to_string(),
+            FleetWorkerEventPayload::Artifact(artifact) => {
+                format!("artifact kind={}", artifact_kind_label(&artifact.kind))
+            }
+            FleetWorkerEventPayload::Completed { exit_code, summary } => match (exit_code, summary)
+            {
+                (Some(code), Some(summary)) => format!("completed exit_code={code} {summary}"),
+                (Some(code), None) => format!("completed exit_code={code}"),
+                (None, Some(summary)) => format!("completed {summary}"),
+                (None, None) => "completed".to_string(),
+            },
+            FleetWorkerEventPayload::Failed {
+                reason,
+                recoverable,
+            } => {
+                format!("failed recoverable={recoverable} reason={reason}")
+            }
+            FleetWorkerEventPayload::Cancelled { cancelled_by } => cancelled_by
+                .as_ref()
+                .map(|by| format!("cancelled by={by}"))
+                .unwrap_or_else(|| "cancelled".to_string()),
+            FleetWorkerEventPayload::Interrupted { signal } => signal
+                .as_ref()
+                .map(|signal| format!("interrupted signal={signal}"))
+                .unwrap_or_else(|| "interrupted".to_string()),
+            FleetWorkerEventPayload::Stale { last_heartbeat_at } => last_heartbeat_at
+                .as_ref()
+                .map(|ts| format!("stale last_heartbeat_at={ts}"))
+                .unwrap_or_else(|| "stale".to_string()),
+            FleetWorkerEventPayload::Restarted { restart_count } => {
+                format!("restarted count={restart_count}")
+            }
+            FleetWorkerEventPayload::Escalated { channel, alert_id } => alert_id
+                .as_ref()
+                .map(|alert_id| format!("escalated channel={channel} alert_id={alert_id}"))
+                .unwrap_or_else(|| format!("escalated channel={channel}")),
+        }
+    }
+
+    fn print_status(status: &FleetStatusSnapshot) {
+        println!(
+            "fleet: runs={} queued={} running={} completed={} failed={} cancelled={} stale={}",
+            status.runs,
+            status.queued,
+            status.running,
+            status.completed,
+            status.failed,
+            status.cancelled,
+            status.stale
+        );
+        if !status.workers.is_empty() {
+            println!("workers:");
+            for (worker_id, worker_status) in &status.workers {
+                println!("  {worker_id} {}", worker_status_label(worker_status));
+            }
+        }
+    }
+
+    fn print_inspection(inspection: &FleetWorkerInspection) {
+        println!("worker: {}", inspection.worker_id);
+        println!("status: {}", worker_status_label(&inspection.status));
+        if let Some(run_id) = &inspection.current_run_id {
+            println!("run: {}", run_id.0);
+        }
+        if let Some(task_id) = &inspection.current_task_id {
+            println!("task: {task_id}");
+        }
+        if let Some(heartbeat) = &inspection.latest_heartbeat_at {
+            println!("heartbeat: {heartbeat}");
+        }
+        if let Some(event) = &inspection.latest_event {
+            println!(
+                "latest_event: seq={} {}",
+                event.seq,
+                event_label(&event.payload)
+            );
+        }
+        if !inspection.artifacts.is_empty() {
+            println!("artifacts:");
+            for artifact in &inspection.artifacts {
+                println!(
+                    "  {} {}",
+                    artifact_kind_label(&artifact.kind),
+                    artifact.path.display()
+                );
+            }
+        }
+        if let Some(error) = &inspection.last_error {
+            println!("last_error: {error}");
+        }
+    }
+
+    let manager = FleetManager::open(workspace)?;
+    match args.command {
+        FleetCommand::Init => {
+            println!("fleet ledger: {}", manager.ledger_path().display());
+            Ok(())
+        }
+        FleetCommand::Run(args) => {
+            let max_workers = args.max_workers.clamp(1, 128);
+            let manager =
+                manager.with_stale_after(Duration::from_secs(args.stale_after_seconds.max(1)));
+            let report = manager.create_run_from_task_spec_path(&args.task_spec, max_workers)?;
+            println!(
+                "fleet run: {} tasks={} leased={} queued={}",
+                report.run_id.0, report.task_count, report.leased, report.queued
+            );
+            println!("workers:");
+            for worker_id in &report.worker_ids {
+                println!("  {worker_id}");
+            }
+            if args.once {
+                print_status(&manager.run_status(&report.run_id)?);
+                return Ok(());
+            }
+            println!(
+                "manager loop running; use `codewhale fleet status`, `inspect`, `interrupt`, or `stop --all` from another terminal."
+            );
+            loop {
+                manager.schedule_run(&report.run_id, max_workers)?;
+                if !manager.run_has_open_work(&report.run_id)? {
+                    print_status(&manager.run_status(&report.run_id)?);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+            Ok(())
+        }
+        FleetCommand::Status => {
+            print_status(&manager.status()?);
+            Ok(())
+        }
+        FleetCommand::Inspect { worker_id } => {
+            print_inspection(&manager.inspect_worker(&worker_id)?);
+            Ok(())
+        }
+        FleetCommand::Interrupt { worker_id } => {
+            let inspection = manager.interrupt_worker(&worker_id)?;
+            print_inspection(&inspection);
+            Ok(())
+        }
+        FleetCommand::Restart { worker_id } => {
+            let inspection = manager.restart_worker(&worker_id)?;
+            print_inspection(&inspection);
+            Ok(())
+        }
+        FleetCommand::Stop { all } => {
+            if !all {
+                bail!("pass --all to stop all fleet work");
+            }
+            let stopped = manager.stop_all()?;
+            println!("stopped: {stopped}");
+            Ok(())
         }
     }
 }

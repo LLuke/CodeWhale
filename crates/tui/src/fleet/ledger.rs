@@ -87,6 +87,8 @@ pub struct FleetLedgerState {
     pub latest_seq: BTreeMap<String, u64>,
     /// Latest event envelope per worker_id:run_id:task_id.
     pub latest_events: BTreeMap<String, FleetWorkerEvent>,
+    /// Artifact events keyed by worker_id:run_id:task_id:path.
+    pub artifact_events: BTreeMap<String, FleetWorkerEvent>,
     /// Completed receipts by run_id:task_id.
     pub receipts: BTreeMap<String, FleetReceipt>,
 }
@@ -122,6 +124,7 @@ pub struct FleetHeartbeatState {
 }
 
 /// Append-only JSONL ledger for fleet runs.
+#[derive(Debug)]
 pub struct FleetLedger {
     ledger_path: PathBuf,
 }
@@ -215,6 +218,23 @@ impl FleetLedger {
             worker_id: worker_id.to_string(),
             timestamp: timestamp.to_string(),
             status: FleetTaskLedgerStatus::Completed,
+        })
+    }
+
+    pub fn mark_task_terminal_status(
+        &self,
+        run_id: &FleetRunId,
+        task_id: &str,
+        worker_id: Option<&str>,
+        timestamp: &str,
+        status: FleetTaskLedgerStatus,
+    ) -> Result<()> {
+        self.append_record(&FleetLedgerRecord::TaskCompletedOrFailed {
+            run_id: run_id.clone(),
+            task_id: task_id.to_string(),
+            worker_id: worker_id.unwrap_or_default().to_string(),
+            timestamp: timestamp.to_string(),
+            status,
         })
     }
 
@@ -374,6 +394,11 @@ impl FleetLedger {
                 event: event.clone(),
             })?);
         }
+        for event in state.artifact_events.values() {
+            lines.push(serde_json::to_string(&FleetLedgerRecord::EventAppended {
+                event: event.clone(),
+            })?);
+        }
         for (worker_id, heartbeat) in &state.heartbeats {
             lines.push(serde_json::to_string(&FleetLedgerRecord::Heartbeat {
                 worker_id: worker_id.clone(),
@@ -418,9 +443,21 @@ fn mark_task_terminal(
     let key = task_key(&run_id.0, task_id);
     if let Some(task) = state.tasks.get_mut(&key) {
         task.status = status;
-        task.leased_to = Some(worker_id.to_string());
+        if !worker_id.is_empty() {
+            task.leased_to = Some(worker_id.to_string());
+        }
         task.completed_at = Some(timestamp.to_string());
     }
+}
+
+fn artifact_event_key(event: &FleetWorkerEvent, artifact: &FleetArtifactRef) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        event.worker_id,
+        event.run_id.0,
+        event.task_id,
+        artifact.path.display()
+    )
 }
 
 fn apply_record(state: &mut FleetLedgerState, record: FleetLedgerRecord) {
@@ -478,6 +515,11 @@ fn apply_record(state: &mut FleetLedgerState, record: FleetLedgerRecord) {
             {
                 state.latest_seq.insert(event_key.clone(), event.seq);
                 state.latest_events.insert(event_key, event.clone());
+            }
+            if let FleetWorkerEventPayload::Artifact(artifact) = &event.payload {
+                state
+                    .artifact_events
+                    .insert(artifact_event_key(&event, artifact), event.clone());
             }
             // Derive worker status from lifecycle events.
             match &event.payload {
