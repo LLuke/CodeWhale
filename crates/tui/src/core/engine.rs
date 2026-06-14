@@ -1574,7 +1574,9 @@ impl Engine {
 
     fn runtime_prompt_message(&self) -> Message {
         let mode = self.current_mode;
-        let approval_mode = approval_mode_for(mode, self.session.approval_mode);
+        let agent_approval_mode =
+            agent_approval_mode_for_turn(self.session.auto_approve, self.session.approval_mode);
+        let approval_mode = approval_mode_for(mode, agent_approval_mode);
         Message {
             role: "user".to_string(),
             content: vec![ContentBlock::Text {
@@ -2808,30 +2810,47 @@ fn agent_approval_mode_for_turn(
     }
 }
 
-/// Produce a minimal runtime-policy tag for the per-turn transient user message.
+/// Produce a minimal runtime-capabilities tag for the per-turn transient user message.
 ///
-/// All mode / approval / shell policy descriptions live in the frozen
-/// system-prompt prefix (`render_runtime_policy_reference()`). This tag
-/// is a pointer — the model looks up the corresponding rules from the
-/// system prompt.  Keeping these flags out of the static prefix preserves
-/// the DeepSeek prefix cache across mode-switches and config-toggles.
+/// Human UI labels such as Plan / Agent / YOLO and approval-mode names stay in
+/// the app shell. The model receives route-effective capabilities instead, so
+/// prompt behavior follows the current runtime posture without training the
+/// model on presentation labels or branding.
 fn runtime_prompt_text(
     mode: AppMode,
     approval_mode: crate::tui::approval::ApprovalMode,
     allow_shell: bool,
 ) -> String {
-    let mode_str = match mode {
-        AppMode::Agent => "agent",
-        AppMode::Plan => "plan",
-        AppMode::Yolo => "yolo",
+    let tool_profile = match mode {
+        AppMode::Agent => "workspace_write",
+        AppMode::Plan => "read_only",
+        AppMode::Yolo => "full_access",
     };
-    let approval_str = match approval_mode {
-        crate::tui::approval::ApprovalMode::Auto => "auto",
-        crate::tui::approval::ApprovalMode::Suggest => "suggest",
-        crate::tui::approval::ApprovalMode::Never => "never",
+    let write_access = match mode {
+        AppMode::Agent => "workspace",
+        AppMode::Plan => "none",
+        AppMode::Yolo => "full_disk",
+    };
+    let shell_access = if matches!(mode, AppMode::Plan) || !allow_shell {
+        "none"
+    } else {
+        "enabled"
+    };
+    let network_access = match mode {
+        AppMode::Plan => "none",
+        AppMode::Agent | AppMode::Yolo => "enabled",
+    };
+    let approval_gate = match approval_mode {
+        crate::tui::approval::ApprovalMode::Auto => "preapproved",
+        crate::tui::approval::ApprovalMode::Suggest => "user_confirm",
+        crate::tui::approval::ApprovalMode::Never => "blocked",
+    };
+    let planning = match mode {
+        AppMode::Plan => "required",
+        AppMode::Agent | AppMode::Yolo => "optional",
     };
     format!(
-        "<runtime_prompt visibility=\"internal\" mode=\"{mode_str}\" approval=\"{approval_str}\" allow_shell=\"{allow_shell}\"/>"
+        "<cw_runtime_capabilities visibility=\"internal\" tool_profile=\"{tool_profile}\" write_access=\"{write_access}\" shell_access=\"{shell_access}\" network_access=\"{network_access}\" approval_gate=\"{approval_gate}\" planning=\"{planning}\"/>"
     )
 }
 

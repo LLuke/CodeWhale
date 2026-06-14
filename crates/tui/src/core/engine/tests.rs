@@ -19,6 +19,26 @@ const WORKING_SET_SUMMARY_MARKER: &str = "## Repo Working Set";
 static CAPACITY_MEMORY_ENV_LOCK: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
 
+fn assert_runtime_capabilities_omit_legacy_labels(text: &str) {
+    for banned in [
+        "<runtime_prompt",
+        "mode=\"",
+        "approval=\"",
+        "allow_shell=",
+        "Agent",
+        "Plan",
+        "YOLO",
+        "agent\"",
+        "plan\"",
+        "yolo\"",
+    ] {
+        assert!(
+            !text.contains(banned),
+            "runtime capability tag should omit legacy label {banned:?}: {text}"
+        );
+    }
+}
+
 struct ScopedCapacityMemoryDir {
     previous: Option<OsString>,
 }
@@ -1985,7 +2005,7 @@ async fn change_mode_refreshes_session_prompt_and_updates_session() {
                 !matches!(
                     block,
                     ContentBlock::Text { text, .. }
-                        if text.contains("<runtime_prompt")
+                        if text.contains("<cw_runtime_capabilities")
                 )
             })
         }),
@@ -2056,12 +2076,15 @@ fn runtime_prompt_is_projected_without_persisting_to_session_messages() {
     else {
         panic!("expected text runtime prompt");
     };
-    assert!(text.contains("<runtime_prompt"));
-    assert!(text.contains("mode=\"plan\""));
+    assert!(text.contains("<cw_runtime_capabilities"));
+    assert!(text.contains("tool_profile=\"read_only\""));
+    assert!(text.contains("write_access=\"none\""));
+    assert!(text.contains("shell_access=\"none\""));
     assert!(
-        text.contains("approval=\"never\""),
-        "Plan mode should project its fixed never-approval policy: {text}"
+        text.contains("approval_gate=\"blocked\""),
+        "read-only posture should project its fixed blocked review gate: {text}"
     );
+    assert_runtime_capabilities_omit_legacy_labels(text);
 }
 
 #[tokio::test]
@@ -2082,9 +2105,9 @@ async fn change_mode_op_updates_current_mode_and_emits_status() {
         .await
         .expect("send change mode");
 
-    // Expect a SessionUpdated event confirming the mode change (the
-    // per-turn <runtime_prompt> tag carries the mode in every request,
-    // so no separate persistence of a mode_change runtime event is needed).
+    // Expect a SessionUpdated event confirming the mode change. The per-turn
+    // capability tag carries the effective runtime posture in every request, so
+    // no separate persistence of a mode_change runtime event is needed.
     let mut rx = handle.rx_event.write().await;
     let session_updated = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
         .await
@@ -2099,7 +2122,7 @@ async fn change_mode_op_updates_current_mode_and_emits_status() {
                 !matches!(
                     block,
                     ContentBlock::Text { text, .. }
-                        if text.contains("<runtime_prompt")
+                        if text.contains("<cw_runtime_capabilities")
                 )
             })
         }),
@@ -2624,12 +2647,12 @@ fn turn_metadata_omits_mode_policy() {
 
     assert!(
         !text.contains("Current mode:"),
-        "turn metadata should leave mode policy to <runtime_prompt>, got: {text}"
+        "turn metadata should leave runtime policy to the capability tag, got: {text}"
     );
 }
 
 #[test]
-fn runtime_prompt_mode_updates_with_change_mode_op() {
+fn runtime_prompt_capabilities_update_with_change_mode_op() {
     let tmp = tempdir().expect("tempdir");
     let config = EngineConfig {
         workspace: tmp.path().to_path_buf(),
@@ -2637,37 +2660,49 @@ fn runtime_prompt_mode_updates_with_change_mode_op() {
     };
     let (mut engine, _handle) = Engine::new(config, &Config::default());
 
-    let agent_msg = engine.runtime_prompt_message();
+    let workspace_msg = engine.runtime_prompt_message();
     let ContentBlock::Text {
-        text: agent_text, ..
-    } = agent_msg.content.first().expect("runtime prompt block")
+        text: workspace_text,
+        ..
+    } = workspace_msg.content.first().expect("runtime prompt block")
     else {
         panic!("expected text runtime prompt");
     };
+    assert!(workspace_text.contains("<cw_runtime_capabilities"));
     assert!(
-        agent_text.contains("mode=\"agent\""),
-        "initial mode should be Agent, got: {agent_text}"
+        workspace_text.contains("tool_profile=\"workspace_write\""),
+        "initial posture should allow workspace writes, got: {workspace_text}"
     );
+    assert!(workspace_text.contains("write_access=\"workspace\""));
+    assert_runtime_capabilities_omit_legacy_labels(workspace_text);
 
-    // Switch to YOLO — runtime_prompt_message should reflect the new mode.
+    // Switch to full access. runtime_prompt_message should reflect capabilities,
+    // not the UI mode label.
     engine.current_mode = AppMode::Yolo;
-    let yolo_msg = engine.runtime_prompt_message();
+    let full_access_msg = engine.runtime_prompt_message();
     let ContentBlock::Text {
-        text: yolo_text, ..
-    } = yolo_msg.content.first().expect("runtime prompt block")
+        text: full_access_text,
+        ..
+    } = full_access_msg
+        .content
+        .first()
+        .expect("runtime prompt block")
     else {
         panic!("expected text runtime prompt");
     };
     assert!(
-        yolo_text.contains("mode=\"yolo\""),
-        "mode after change should be YOLO, got: {yolo_text}"
+        full_access_text.contains("tool_profile=\"full_access\""),
+        "posture after change should allow full access, got: {full_access_text}"
     );
+    assert!(full_access_text.contains("write_access=\"full_disk\""));
+    assert!(full_access_text.contains("approval_gate=\"preapproved\""));
+    assert_runtime_capabilities_omit_legacy_labels(full_access_text);
 }
 
 #[test]
 fn current_mode_field_assignment_takes_effect_synchronously() {
     // Basic unit-level invariant: the current_mode field mutates as expected
-    // and the per-turn <runtime_prompt> tag reflects the current mode.
+    // and the per-turn capability tag reflects the current runtime posture.
     // Op::ChangeMode dispatch through the run loop is exercised by the
     // integration test change_mode_op_updates_current_mode_and_emits_status.
     let tmp = tempdir().expect("tempdir");
@@ -2679,41 +2714,45 @@ fn current_mode_field_assignment_takes_effect_synchronously() {
     let (mut engine, _handle) = Engine::new(config, &Config::default());
     assert_eq!(engine.current_mode, AppMode::Agent);
 
-    // Verify runtime tag in Agent mode
-    let agent_messages = engine.messages_with_turn_metadata();
-    let agent_tag = agent_messages.last().expect("runtime tag message");
+    // Verify runtime tag in the initial workspace-write posture.
+    let workspace_messages = engine.messages_with_turn_metadata();
+    let workspace_tag = workspace_messages.last().expect("runtime tag message");
     let ContentBlock::Text {
-        text: agent_text, ..
-    } = agent_tag.content.first().expect("text block")
+        text: workspace_text,
+        ..
+    } = workspace_tag.content.first().expect("text block")
     else {
-        panic!("expected text runtime tag in Agent mode");
+        panic!("expected text runtime tag in workspace-write posture");
     };
     assert!(
-        agent_text.contains("mode=\"agent\""),
-        "Agent mode should produce runtime tag with mode=\"agent\", got: {agent_text}"
+        workspace_text.contains("tool_profile=\"workspace_write\""),
+        "workspace-write posture should produce matching runtime tag, got: {workspace_text}"
     );
+    assert_runtime_capabilities_omit_legacy_labels(workspace_text);
 
-    // Switch to YOLO
+    // Switch to full access.
     engine.current_mode = AppMode::Yolo;
     assert_eq!(engine.current_mode, AppMode::Yolo);
 
-    // Verify runtime tag reflects the YOLO mode with auto approval
-    let yolo_messages = engine.messages_with_turn_metadata();
-    let yolo_tag = yolo_messages.last().expect("runtime tag message");
+    // Verify runtime tag reflects full access with a preapproved review gate.
+    let full_access_messages = engine.messages_with_turn_metadata();
+    let full_access_tag = full_access_messages.last().expect("runtime tag message");
     let ContentBlock::Text {
-        text: yolo_text, ..
-    } = yolo_tag.content.first().expect("text block")
+        text: full_access_text,
+        ..
+    } = full_access_tag.content.first().expect("text block")
     else {
-        panic!("expected text runtime tag in YOLO mode");
+        panic!("expected text runtime tag in full-access posture");
     };
     assert!(
-        yolo_text.contains("mode=\"yolo\""),
-        "YOLO mode should produce runtime tag with mode=\"yolo\", got: {yolo_text}"
+        full_access_text.contains("tool_profile=\"full_access\""),
+        "full-access posture should produce matching runtime tag, got: {full_access_text}"
     );
     assert!(
-        yolo_text.contains("approval=\"auto\""),
-        "YOLO mode should project auto approval in runtime tag, got: {yolo_text}"
+        full_access_text.contains("approval_gate=\"preapproved\""),
+        "full-access posture should project preapproved review gate, got: {full_access_text}"
     );
+    assert_runtime_capabilities_omit_legacy_labels(full_access_text);
 }
 
 #[test]
@@ -2799,7 +2838,8 @@ fn messages_with_turn_metadata_preserves_stored_messages_for_prefix_cache() {
     else {
         panic!("expected runtime prompt text");
     };
-    assert!(text.contains("<runtime_prompt"));
+    assert!(text.contains("<cw_runtime_capabilities"));
+    assert_runtime_capabilities_omit_legacy_labels(text);
 }
 
 /// v0.8.11 regression: tool-result messages serialize to role="tool" on
@@ -2878,7 +2918,7 @@ fn turn_metadata_skips_tool_result_messages() {
     assert!(
         matches!(
             messages.last().and_then(|message| message.content.first()),
-            Some(ContentBlock::Text { text, .. }) if text.contains("<runtime_prompt")
+            Some(ContentBlock::Text { text, .. }) if text.contains("<cw_runtime_capabilities")
         ),
         "request projection should append transient runtime metadata"
     );
@@ -2969,7 +3009,7 @@ fn turn_metadata_skips_when_only_tool_results_trail() {
     assert!(
         matches!(
             messages.last().and_then(|message| message.content.first()),
-            Some(ContentBlock::Text { text, .. }) if text.contains("<runtime_prompt")
+            Some(ContentBlock::Text { text, .. }) if text.contains("<cw_runtime_capabilities")
         ),
         "request projection should still append transient runtime metadata"
     );
