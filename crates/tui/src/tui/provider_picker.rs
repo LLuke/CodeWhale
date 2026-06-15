@@ -47,10 +47,20 @@ pub struct ProviderPickerView {
 impl ProviderPickerView {
     #[must_use]
     pub fn new(active: ApiProvider, config: &Config) -> Self {
-        let providers: Vec<(ApiProvider, bool)> = ApiProvider::all()
+        // Present providers in neutral case-insensitive alphabetical order by
+        // display name (#3076) rather than leading with whichever provider sits
+        // first in `ApiProvider::all()` (historically DeepSeek). DeepSeek stays
+        // present and searchable; the active provider is highlighted via
+        // `selected_idx` below, so it is never lost in the list.
+        let mut providers: Vec<(ApiProvider, bool)> = ApiProvider::all()
             .iter()
             .map(|p| (*p, has_api_key_for(config, *p)))
             .collect();
+        providers.sort_by(|(a, _), (b, _)| {
+            a.display_name()
+                .to_ascii_lowercase()
+                .cmp(&b.display_name().to_ascii_lowercase())
+        });
         let selected_idx = providers
             .iter()
             .position(|(p, _)| *p == active)
@@ -494,35 +504,22 @@ mod tests {
             .iter()
             .map(|(p, _)| p.display_name())
             .collect();
+
+        // Every built-in provider is present, none dropped (#3076 reorders, it
+        // does not filter).
+        assert_eq!(names.len(), ApiProvider::all().len());
+        assert!(names.contains(&"DeepSeek"));
+
+        // Providers are presented in neutral case-insensitive alphabetical
+        // order by display name (#3076), not `ApiProvider::all()` order.
+        let mut expected = names.clone();
+        expected.sort_by_key(|name| name.to_ascii_lowercase());
         assert_eq!(
-            names,
-            vec![
-                "DeepSeek",
-                "NVIDIA NIM",
-                "OpenAI-compatible",
-                "AtlasCloud",
-                "Wanjie Ark",
-                "Volcengine Ark",
-                "OpenRouter",
-                "Xiaomi MiMo",
-                "Novita AI",
-                "Fireworks AI",
-                "SiliconFlow",
-                "Arcee AI",
-                "SiliconFlow (China)",
-                "Moonshot/Kimi",
-                "SGLang",
-                "vLLM",
-                "Ollama",
-                "Hugging Face",
-                "Together AI",
-                "OpenAI Codex (ChatGPT)",
-                "Anthropic",
-                "Z.ai (GLM Coding)",
-                "StepFun / StepFlash",
-                "MiniMax"
-            ]
+            names, expected,
+            "provider picker must list providers in case-insensitive alphabetical order"
         );
+        // DeepSeek is no longer hard-coded first.
+        assert_ne!(names.first(), Some(&"DeepSeek"));
     }
 
     #[test]
@@ -553,12 +550,16 @@ mod tests {
     fn list_navigation_wraps_between_first_and_last_provider() {
         let config = Config::default();
         let mut picker = ProviderPickerView::new(ApiProvider::Deepseek, &config);
+        let first = picker.providers.first().expect("non-empty list").0;
+        let last = picker.providers.last().expect("non-empty list").0;
 
+        // Order-independent: jump to the first entry, wrap up to the last, back down.
+        picker.selected_idx = 0;
         picker.handle_key(key(KeyCode::Up));
-        assert_eq!(picker.selected_provider(), ApiProvider::Minimax);
+        assert_eq!(picker.selected_provider(), last);
 
         picker.handle_key(key(KeyCode::Down));
-        assert_eq!(picker.selected_provider(), ApiProvider::Deepseek);
+        assert_eq!(picker.selected_provider(), first);
     }
 
     #[test]
@@ -580,8 +581,8 @@ mod tests {
             ..Config::default()
         };
         let mut picker = ProviderPickerView::new(ApiProvider::NvidiaNim, &config);
-        // Move up once to DeepSeek (index 0), which has a key from the config.
-        picker.handle_key(key(KeyCode::Up));
+        // Navigate to DeepSeek, which has a key from the top-level config.
+        move_to_provider(&mut picker, ApiProvider::Deepseek);
         let action = picker.handle_key(key(KeyCode::Enter));
         match action {
             ViewAction::EmitAndClose(ViewEvent::ProviderPickerApplied { provider }) => {
