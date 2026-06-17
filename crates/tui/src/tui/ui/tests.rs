@@ -4396,7 +4396,9 @@ fn footer_session_tokens_chip_uses_single_compact_total() {
 }
 
 #[test]
-fn footer_session_tokens_chip_shows_live_output_throughput() {
+fn footer_session_tokens_chip_shows_token_count_without_throughput() {
+    // Throughput display ("out ~12/s live") was removed — the token count
+    // is enough. See commit history for rationale.
     let mut app = create_test_app();
     app.is_loading = true;
     app.turn_started_at = Some(Instant::now() - Duration::from_secs(10));
@@ -4404,11 +4406,12 @@ fn footer_session_tokens_chip_shows_live_output_throughput() {
 
     let text = spans_text(&footer_session_tokens_spans(&app));
 
-    assert_eq!(text, "tok live \u{00B7} out ~12/s live");
+    // No tokens accumulated yet (only streaming estimate), so chip is empty.
+    assert_eq!(text, "");
 }
 
 #[test]
-fn footer_session_tokens_chip_shows_last_reported_output_throughput() {
+fn footer_session_tokens_chip_shows_compact_total() {
     let mut app = create_test_app();
     app.session.total_input_tokens = 1_000;
     app.session.total_output_tokens = 240;
@@ -4417,7 +4420,10 @@ fn footer_session_tokens_chip_shows_last_reported_output_throughput() {
 
     let text = spans_text(&footer_session_tokens_spans(&app));
 
-    assert_eq!(text, "tok 1.2k \u{00B7} out 20/s last");
+    // Token count shown; throughput NOT appended.
+    assert_eq!(text, "tok 1.2k");
+    assert!(!text.contains("out"));
+    assert!(!text.contains("/s"));
 }
 
 #[test]

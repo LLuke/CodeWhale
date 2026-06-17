@@ -167,26 +167,21 @@ pub(crate) fn provider_wait_idle_secs(app: &App) -> u64 {
         .unwrap_or(0)
 }
 
-/// Detailed `waiting for model` reason: provider/model route, elapsed idle
-/// time against the stream-idle budget, and — when a sub-agent fanout is
-/// planned but nothing has launched — an explicit `0 running` marker so a
-/// pre-launch provider wait is never mistaken for active sub-agent work.
+/// `waiting for model` reason — kept short: just elapsed idle time. The
+/// provider and model are already visible in the header bar, so repeating
+/// them in the footer stall reason is noise. The structured incident logger
+/// (`maybe_log_provider_wait_incident`) still captures the full detail for
+/// diagnostics.
 fn provider_wait_reason(app: &App) -> String {
     let idle = provider_wait_idle_secs(app);
-    let budget = app.stream_chunk_timeout_secs;
-    let mut reason = format!(
-        "waiting for {} {}, {idle}s/{budget}s idle timeout",
-        app.api_provider.as_str(),
-        app.model
-    );
     if running_agent_count(app) == 0 {
         if let Some((0, total)) = active_fanout_counts(app) {
-            reason.push_str(&format!("; fanout 0/{total} running"));
+            return format!("waiting · fanout 0/{total}");
         } else if app.pending_subagent_dispatch.is_some() {
-            reason.push_str("; sub-agent dispatch pending, 0 running");
+            return "waiting · dispatch pending".to_string();
         }
     }
-    reason
+    format!("waiting for model · {idle}s")
 }
 
 /// Threshold after which a provider wait with a planned fanout is logged as
@@ -803,36 +798,13 @@ pub(crate) fn should_show_footer_cost(displayed_cost: f64) -> bool {
 /// Detailed cache stats live in the separate `cache` chip.
 pub(crate) fn footer_session_tokens_spans(app: &App) -> Vec<Span<'static>> {
     let session = &app.session;
-    let throughput = footer_output_throughput_label(app);
-    if session.total_input_tokens == 0 && session.total_output_tokens == 0 && throughput.is_none() {
+    if session.total_input_tokens == 0 && session.total_output_tokens == 0 {
         return Vec::new();
     }
     let total = u64::from(session.total_input_tokens)
         .saturating_add(u64::from(session.total_output_tokens));
-    let mut text = if total == 0 {
-        "tok live".to_string()
-    } else {
-        format!("tok {}", format_token_count_compact(total))
-    };
-    if let Some(label) = throughput {
-        text.push_str(" \u{00B7} ");
-        text.push_str(&label);
-    }
+    let text = format!("tok {}", format_token_count_compact(total));
     vec![Span::styled(text, Style::default().fg(palette::TEXT_MUTED))]
-}
-
-fn footer_output_throughput_label(app: &App) -> Option<String> {
-    if app.is_loading
-        && let Some(started_at) = app.turn_started_at
-        && let Some(throughput) =
-            TokenThroughput::new(app.streaming_output_token_estimate, started_at.elapsed())
-    {
-        return Some(format!("out ~{}/s live", throughput.compact_rate()));
-    }
-
-    app.session
-        .last_output_throughput
-        .map(|throughput| format!("out {}/s last", throughput.compact_rate()))
 }
 
 /// Test-only helper retained as a parity reference for `FooterWidget`'s
