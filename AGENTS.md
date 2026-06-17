@@ -2,11 +2,13 @@
 
 ## Where to work right now (read this first)
 
-- **Repo:** `Hmbown/CodeWhale`. The canonical checkout for agent work is the
-  worktree at `/Users/hunter/Desktop/Harnesses/CodeWhale/CodeWhale-0.8.62-glm-subagents`.
+- **Repo:** `Hmbown/CodeWhale`. This repo lives on multiple devices, so do
+  **not** hard-code a device-specific checkout path here — work in whichever
+  local checkout you have and always **confirm with
+  `git branch --show-current` before editing.**
 - **Active branch:** `hunter/0.8.62-glm-subagents` (also at
   `origin/hunter/0.8.62-glm-subagents`). 0.8.61 has shipped; all new work lands
-  here. **Confirm with `git branch --show-current` before editing.**
+  here.
 - **Workspace version is intentionally still `0.8.61`** in `Cargo.toml` — the
   bump to `0.8.62` is deferred until the GLM-5.2 routing is smoke-tested end to
   end against live Z.ai + OpenRouter (see CHANGELOG `## [Unreleased]`). Do not
