@@ -56,9 +56,8 @@ CLI/API surfaces are not implemented yet.
 historically reached through `serve --http` — no routes or behavior changed, so
 every endpoint documented below is identical across both entrypoints. The
 runtime API token is read from `--auth-token`, then `CODEWHALE_RUNTIME_TOKEN`,
-then `DEEPSEEK_RUNTIME_TOKEN`; pass `--insecure-no-auth` to the app-server
-entrypoint only on a trusted loopback. The `serve` compatibility aliases keep
-their `--insecure` flag.
+then `DEEPSEEK_RUNTIME_TOKEN`; use `--insecure-no-auth` only with a loopback
+bind. The `serve` compatibility aliases keep their `--insecure` flag.
 
 The `--stdio` control transport is newline-delimited JSON-RPC 2.0. Probe it
 without spending model tokens:
@@ -215,7 +214,8 @@ codewhale doctor --json
 
 ```bash
 codewhale app-server --http [--host 127.0.0.1] [--port 7878] [--workers 2] [--auth-token TOKEN] [--insecure-no-auth]
-codewhale app-server --mobile [--host 0.0.0.0] [--port 7878] [--auth-token TOKEN] [--insecure-no-auth]
+codewhale app-server --mobile [--host 0.0.0.0] [--port 7878] [--auth-token TOKEN]
+codewhale app-server --mobile --host 127.0.0.1 [--port 7878] [--insecure-no-auth]
 
 # Compatibility aliases — identical server, serve flag names:
 codewhale serve --http   [...] [--insecure]
@@ -228,8 +228,11 @@ The server binds to `localhost` by default. Configuration is via CLI flags —
 there is no `[app_server]` config section.
 
 `/v1/*` routes require a bearer token unless `codewhale app-server` is started
-with `--insecure-no-auth`. The `codewhale serve` compatibility aliases use
-`--insecure` for the same trusted-loopback escape hatch.
+with `--insecure-no-auth` on a loopback bind such as `127.0.0.1`. Do not combine
+no-auth mode with the `--mobile` default host `0.0.0.0`; use a token for LAN
+mobile access, or add `--host 127.0.0.1` for local-only no-auth testing. The
+`codewhale serve` compatibility aliases use `--insecure` for the same loopback
+escape hatch.
 Pass `--auth-token TOKEN` or set `DEEPSEEK_RUNTIME_TOKEN=TOKEN` before starting
 the server. If neither is set, the process generates a one-time token and prints
 it at startup. `/health` and `/v1/runtime/info` remain public for local
